@@ -100,6 +100,7 @@ export function createMockTransport(): Transport {
     const parts = pathname.split("/").filter(Boolean);
     const body = init.body ? JSON.parse(String(init.body)) : undefined;
     if (init.method === "POST") {
+      if (pathname === "/evaluations") return failure("AI_NOT_CONFIGURED", 503);
       if (pathname === "/datasets/import")
         return response(
           importData(demoRecords, String(body.group_id).trim(), "dataset"),

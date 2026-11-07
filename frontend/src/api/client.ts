@@ -1,15 +1,19 @@
 import { z } from "zod";
-import { ApiError, logEvent, safeCode, type Event } from "./errors";
+import { ApiError, logEvent, safeCode, type Mutation } from "./errors";
 import {
   checklistDetailSchema,
   checklistSummarySchema,
   checklistVersionSchema,
   conversationSchema,
   conversationSummarySchema,
+  appealSchema,
+  decisionResponseSchema,
+  evaluationSchema,
   importSummarySchema,
   pageSchema,
   type Channel,
   type Criterion,
+  type DecisionInput,
   type Language,
 } from "./schema";
 
@@ -30,7 +34,7 @@ export class ApiClient {
     path: string,
     schema: z.ZodType<T>,
     body?: unknown,
-    operation: "load" | "import" | "save" = "load",
+    operation: "load" | Mutation = "load",
     signal?: AbortSignal,
   ): Promise<T> {
     const controller = new AbortController();
@@ -42,6 +46,7 @@ export class ApiClient {
     try {
       const response = await this.transport(path, {
         method: body === undefined ? "GET" : "POST",
+        cache: "no-store",
         headers: { "Content-Type": "application/json" },
         body: body === undefined ? undefined : JSON.stringify(body),
         signal: controller.signal,
@@ -81,7 +86,7 @@ export class ApiClient {
         : error instanceof ApiError
           ? error
           : new ApiError("NETWORK_ERROR");
-      logEvent(`${operation}_failed` as Event, safe.status, safe.code);
+      logEvent(`${operation}_failed`, safe.status, safe.code);
       throw safe;
     } finally {
       clearTimeout(timeout);
@@ -101,9 +106,12 @@ export class ApiClient {
       signal,
     );
   }
-  conversation(id: string, signal?: AbortSignal) {
+  conversation(id: string, signal?: AbortSignal, transcriptVersion?: string) {
+    const query = transcriptVersion
+      ? `?${new URLSearchParams({ transcript_version_id: transcriptVersion })}`
+      : "";
     return this.request(
-      `/conversations/${encodeURIComponent(id)}`,
+      `/conversations/${encodeURIComponent(id)}${query}`,
       conversationSchema,
       undefined,
       "load",
@@ -134,6 +142,74 @@ export class ApiClient {
       checklistVersionSchema,
       undefined,
       "load",
+      signal,
+    );
+  }
+  startEvaluation(
+    conversation_id: string,
+    checklist_version_id: string,
+    signal: AbortSignal,
+  ) {
+    return this.request(
+      "/evaluations",
+      evaluationSchema,
+      { conversation_id, checklist_version_id },
+      "evaluation_start",
+      signal,
+    );
+  }
+  evaluation(id: string, signal: AbortSignal) {
+    return this.request(
+      `/evaluations/${encodeURIComponent(id)}`,
+      evaluationSchema,
+      undefined,
+      "load",
+      signal,
+    );
+  }
+  appeals(evaluation_id: string, offset: number, signal: AbortSignal) {
+    const query = new URLSearchParams({
+      evaluation_id,
+      limit: "50",
+      offset: String(offset),
+    });
+    return this.request(
+      `/appeals?${query}`,
+      pageSchema(appealSchema),
+      undefined,
+      "load",
+      signal,
+    );
+  }
+  appeal(id: string, signal: AbortSignal) {
+    return this.request(
+      `/appeals/${encodeURIComponent(id)}`,
+      appealSchema,
+      undefined,
+      "load",
+      signal,
+    );
+  }
+  createAppeal(
+    id: string,
+    criterion_id: string,
+    comment: string,
+    signal: AbortSignal,
+  ) {
+    return this.request(
+      `/evaluations/${encodeURIComponent(id)}/appeals`,
+      appealSchema,
+      { criterion_id, comment },
+      "appeal",
+      signal,
+    );
+  }
+  decideAppeal(id: string, decision: DecisionInput, signal: AbortSignal) {
+    return this.request(
+      `/appeals/${encodeURIComponent(id)}/decisions`,
+      decisionResponseSchema,
+      decision,
+      "decision",
       signal,
     );
   }

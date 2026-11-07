@@ -64,7 +64,7 @@ test("explicit mock mode, language/channel filters, roles and raw timestamps", a
     page.getByRole("combobox", { name: "Версия", exact: true }),
   ).toHaveValue(demoChecklist.id);
   await expect(
-    page.getByText("AI-анализ ещё не подключён.", { exact: false }),
+    page.getByRole("button", { name: "Запустить оценку" }),
   ).toBeVisible();
 });
 
@@ -269,7 +269,10 @@ test("409 retains draft, compares latest and sends explicit new expected version
   ).toBeVisible();
   await page
     .getByRole("button", { name: "Сохранить черновик для повторной отправки" })
-    .click();
+    .press("Enter");
+  await expect(criterion(page, 1).getByLabel("Название критерия")).toHaveValue(
+    "Мой черновик",
+  );
   await page.getByRole("button", { name: "Сохранить новую версию" }).click();
   await expect(page.getByRole("status")).toContainText("Версия 3 сохранена");
   expect(

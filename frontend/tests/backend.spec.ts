@@ -32,6 +32,13 @@ test("production app: JSON import, checklist history, reload and disabled AI", a
   await expect(
     page.getByRole("combobox", { name: "Версия", exact: true }),
   ).toHaveValue(initial.latest_version_id);
+  await page.getByRole("button", { name: "Запустить оценку" }).click();
+  await expect(page.getByRole("alert")).toContainText(
+    "Провайдер оценки пока недоступен",
+  );
+  await expect(
+    page.getByRole("heading", { name: "Финальная оценка" }),
+  ).toHaveCount(0);
   await page.goto("/checklists?mode=api");
   await expect(
     page.getByRole("link", { name: new RegExp(initial.name) }),
