@@ -1,6 +1,6 @@
 # Проверка работоспособности и точности
 
-План описывает целевую проверку приложения, а не подтверждённый выпуск. В A-01/A-02 появились стартовые проверки в `backend/tests`: 18 для настроек/health/ошибок/CORS/SQLite и 39 для общих схем, OpenAPI и 26 синтетических примеров. Они проходят на Python 3.12/3.13. Проверены локальный uvicorn+curl health и синтаксис Compose; локальная сборка контейнера недоступна из-за прав на Docker daemon. Business API, UI, реальный AI и измерения точности пока отсутствуют; следующие разделы остаются планом. Команды — `make check`, `uv run --project backend --locked pytest backend/tests`.
+План описывает целевую проверку приложения, а не подтверждённый выпуск. В A-01/A-02 появились стартовые проверки в `backend/tests`: 18 для настроек/health/ошибок/CORS/SQLite и 39 для общих схем, OpenAPI и 26 синтетических примеров. Они проходят на Python 3.12/3.13 локально и в [GitHub Actions для 13f4a96](https://github.com/abilkhayrbigali-design/HULK-S_FAMILY_REPO/actions/runs/42364899458). Там же успешно собран backend-контейнер, выполнены Compose up --wait и HTTP health-check. Локальный Docker daemon недоступен. Business API, UI, реальный AI и измерения точности пока отсутствуют; следующие разделы остаются планом. Команды — `make check`, `uv run --project backend --locked pytest backend/tests`.
 
 ## 1. Что проверяем отдельно
 

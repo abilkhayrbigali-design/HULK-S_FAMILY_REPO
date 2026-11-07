@@ -65,7 +65,7 @@ curl --fail http://127.0.0.1:8000/health
 docker compose -f compose.api.yaml up --build --wait
 ```
 
-Это только API. Локально конфигурация Compose проверена, сборка/запуск контейнера не подтверждены из-за отсутствия доступа к Docker daemon. Соответствующая проверка добавлена в GitHub Actions. Полный Compose с клиентом и worker — A-04.
+Это только API. Локальный Docker daemon недоступен, но сборка, запуск Compose и HTTP health-check успешно проверены в [GitHub Actions для 13f4a96](https://github.com/abilkhayrbigali-design/HULK-S_FAMILY_REPO/actions/runs/42364899458). Там же прошли 57 тестов, lint/форматирование, проверка экспортов и запуск API на Python 3.12/3.13. Полный Compose с клиентом и worker — A-04.
 
 ## Общий контракт для команды
 
