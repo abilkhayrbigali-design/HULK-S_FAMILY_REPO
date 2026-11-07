@@ -4,8 +4,6 @@ Export with tools/export_contracts.py. Business validation (references, arithmet
 version conflicts) belongs to C/N services and cannot be established by JSON Schema.
 """
 
-from copy import deepcopy
-
 
 def ref(name):
     return {"$ref": f"#/components/schemas/{name}"}
@@ -266,23 +264,17 @@ SCHEMAS.update(
     }
 )
 
-SCHEMAS["CriterionAssessment"] = deepcopy(SCHEMAS["ProviderCriterionResult"])
-SCHEMAS["CriterionAssessment"]["properties"].update(
+SCHEMAS["CriterionAssessment"] = obj(
     {
+        **SCHEMAS["ProviderCriterionResult"]["properties"],
         "weight": NUMBER,
         "base_points": NUMBER,
         "effective_weight": NUMBER,
         "effective_points": NUMBER,
         "review_required": BOOL,
-    }
+    },
+    allOf=SCHEMAS["ProviderCriterionResult"]["allOf"],
 )
-SCHEMAS["CriterionAssessment"]["required"] += [
-    "weight",
-    "base_points",
-    "effective_weight",
-    "effective_points",
-    "review_required",
-]
 SCHEMAS["Assessment"] = obj(
     {
         "total": nullable(SCORE),

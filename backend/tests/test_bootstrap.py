@@ -118,6 +118,9 @@ def test_dotenv_loading_and_environment_override(tmp_path, monkeypatch):
         {"CQA_ALLOWED_ORIGINS": "http://localhost:70000"},
         {"CQA_ALLOWED_ORIGINS": "https://[synthetic-signature]"},
         {"CQA_ALLOWED_ORIGINS": "http://local\nhost:5173"},
+        {"CQA_ALLOWED_ORIGINS": "http://localhost\x00:5173"},
+        {"CQA_ALLOWED_ORIGINS": "http://localhost\x1b:5173"},
+        {"CQA_ALLOWED_ORIGINS": "http://localhost\x7f:5173"},
         {"CQA_ALLOWED_ORIGINS": "http://localhost:5173?"},
         {"CQA_ALLOWED_ORIGINS": "http://localhost:5173#"},
         {"CQA_DATASET_API_URL": "http://example.invalid?sig=synthetic-signature"},
@@ -125,6 +128,11 @@ def test_dotenv_loading_and_environment_override(tmp_path, monkeypatch):
         {"CQA_DATASET_API_URL": "https://example.invalid:bad/api"},
         {"CQA_DATASET_API_URL": "https://example.invalid:70000/api"},
         {"CQA_DATASET_API_URL": "https://example.invalid\n/api"},
+        {"CQA_DATASET_API_URL": "\x00https://example.invalid/api"},
+        {"CQA_DATASET_API_URL": "https://example.invalid/\x1bapi"},
+        {"CQA_DATASET_API_URL": "https://example.invalid/\x7fapi"},
+        {"CQA_DATASET_API_URL": "https://example.invalid/api#sig=synthetic-signature"},
+        {"CQA_DATASET_API_URL": "https://example.invalid/api#"},
     ],
 )
 def test_invalid_configuration_is_rejected_without_echoing_secret(values):
@@ -201,6 +209,9 @@ def test_errors_after_response_start_do_not_expose_private_exceptions(
     rendered = "".join(traceback.format_exception(error.value)) + caplog.text
     assert "synthetic-signature" not in rendered
     assert "INTERNAL_ERROR" in caplog.text
+    records = [record for record in caplog.records if record.name.startswith("cqa.")]
+    assert {record.name for record in records} == {"cqa.requests", "cqa.errors"}
+    assert all(record.levelno == logging.ERROR for record in records)
 
 
 def test_method_not_allowed_preserves_allow_header_and_safe_body(settings):
@@ -264,3 +275,125 @@ def test_cors_only_allows_configured_origins(settings):
         )
     assert allowed.headers["access-control-allow-origin"] == "http://localhost:5173"
     assert "access-control-allow-origin" not in denied.headers
+
+
+@pytest.mark.parametrize(
+    ("path", "status", "code", "level"),
+    [
+        ("/unknown", 404, "NOT_FOUND", logging.WARNING),
+        ("/health", 405, "METHOD_NOT_ALLOWED", logging.WARNING),
+        ("/test/require-ai", 503, "AI_NOT_CONFIGURED", logging.ERROR),
+        ("/test/validate", 422, "VALIDATION_ERROR", logging.WARNING),
+        ("/test/custom-error", 409, "CONFLICT", logging.WARNING),
+    ],
+)
+def test_handled_errors_log_their_safe_code_and_severity(
+    settings, caplog, path, status, code, level
+):
+    app = create_app(settings)
+
+    class Input(BaseModel):
+        value: int
+
+    @app.post("/test/validate")
+    def validate(payload: Input):
+        return payload
+
+    @app.post("/test/require-ai", dependencies=[Depends(settings.require_llm)])
+    def require_ai():
+        pytest.fail("An unconfigured AI action must never execute")
+
+    @app.post("/test/custom-error")
+    def custom_error():
+        raise HTTPException(409, detail="synthetic-private-transcript")
+
+    with TestClient(app) as client, caplog.at_level(logging.INFO, logger="cqa.requests"):
+        response = client.post(
+            path + "?sig=synthetic-signature", json={"value": "synthetic-private-transcript"}
+        )
+    assert response.status_code == status
+    records = [record for record in caplog.records if record.name == "cqa.requests"]
+    assert len(records) == 1
+    assert records[0].levelno == level
+    assert f"status={status}" in records[0].getMessage()
+    assert f"error={code}" in records[0].getMessage()
+    assert "synthetic-signature" not in caplog.text
+    assert "synthetic-private-transcript" not in caplog.text
+
+
+def test_cors_preflight_errors_are_logged(settings, caplog):
+    with (
+        TestClient(create_app(settings)) as client,
+        caplog.at_level(logging.INFO, logger="cqa.requests"),
+    ):
+        response = client.options(
+            "/health?sig=synthetic-signature",
+            headers={
+                "Origin": "https://example.invalid",
+                "Access-Control-Request-Method": "GET",
+            },
+        )
+    assert response.status_code == 400
+    records = [record for record in caplog.records if record.name == "cqa.requests"]
+    assert len(records) == 1
+    assert records[0].levelno == logging.WARNING
+    assert "error=HTTP_400" in records[0].getMessage()
+    assert "synthetic-signature" not in caplog.text
+
+
+def test_database_errors_have_safe_diagnostics_even_at_error_log_level(caplog):
+    settings = Settings(
+        _env_file=None, CQA_DATABASE_URL="sqlite:///:memory:", CQA_LOG_LEVEL="ERROR"
+    )
+    with TestClient(create_app(settings)) as client, caplog.at_level(logging.ERROR):
+        with patch.object(
+            client.app.state.engine,
+            "connect",
+            side_effect=OperationalError(
+                "synthetic-private-transcript", {}, Exception("?sig=synthetic-signature")
+            ),
+        ):
+            response = client.get("/health")
+    assert response.status_code == 503
+    requests = [record for record in caplog.records if record.name == "cqa.requests"]
+    errors = [record for record in caplog.records if record.name == "cqa.errors"]
+    assert len(requests) == len(errors) == 1
+    assert "error=DATABASE_UNAVAILABLE" in requests[0].getMessage()
+    assert "error=DATABASE_UNAVAILABLE" in errors[0].getMessage()
+    assert "backend/app/main.py:" in errors[0].getMessage()
+    assert errors[0].exc_info is None
+    assert errors[0].stack_info is None
+    assert "synthetic-private-transcript" not in caplog.text
+    assert "synthetic-signature" not in caplog.text
+
+
+@pytest.mark.parametrize("grouped", [False, True])
+def test_internal_errors_log_code_locations_without_exception_text(settings, caplog, grouped):
+    app = create_app(settings)
+
+    @app.get("/test/fail-with-diagnostics")
+    def fail():
+        try:
+            raise ValueError("synthetic-private-transcript")
+        except ValueError as error:
+            if grouped:
+                raise ExceptionGroup("synthetic-secret-group", [error]) from None
+            raise RuntimeError("https://example.invalid?sig=synthetic-signature") from error
+
+    with TestClient(app) as client, caplog.at_level(logging.ERROR):
+        response = client.get(
+            "/test/fail-with-diagnostics?sig=synthetic-signature",
+            headers={"Origin": "http://localhost:5173"},
+        )
+    assert response.status_code == 500
+    assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
+    assert response.json()["error"]["code"] == "INTERNAL_ERROR"
+    requests = [record for record in caplog.records if record.name == "cqa.requests"]
+    errors = [record for record in caplog.records if record.name == "cqa.errors"]
+    assert len(requests) == len(errors) == 1
+    assert "error=INTERNAL_ERROR" in requests[0].getMessage()
+    assert "backend/tests/test_bootstrap.py:" in errors[0].getMessage()
+    assert errors[0].exc_info is None
+    assert errors[0].stack_info is None
+    for secret in ("synthetic-signature", "synthetic-private-transcript", "synthetic-secret-group"):
+        assert secret not in caplog.text

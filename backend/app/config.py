@@ -14,8 +14,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 def _parse_http_url(value: str) -> SplitResult:
     """Validate without normalizing signed URLs; callers replace parser error messages."""
-    if any(character.isspace() for character in value):
-        raise ValueError("Whitespace is not permitted in a URL")
+    if any(
+        character.isspace() or ord(character) < 32 or ord(character) == 127 for character in value
+    ):
+        raise ValueError("Whitespace and control characters are not permitted in a URL")
     parsed = urlsplit(value)
     if (
         parsed.scheme not in {"http", "https"}
@@ -68,11 +70,11 @@ class Settings(BaseSettings):
         if raw:
             try:
                 parsed = _parse_http_url(raw)
-                if parsed.scheme != "https":
-                    raise ValueError("HTTPS is required")
+                if parsed.scheme != "https" or "#" in raw:
+                    raise ValueError("HTTPS without a fragment is required")
             except ValueError:
                 raise ValueError(
-                    "CQA_DATASET_API_URL must be an HTTPS URL without credentials"
+                    "CQA_DATASET_API_URL must be an HTTPS URL without credentials or a fragment"
                 ) from None
         return value
 
