@@ -28,6 +28,8 @@ def obj(properties, required=None, **constraints):
 
 
 STRING = {"type": "string", "minLength": 1, "pattern": r"\S"}
+RAW_TEXT = {"type": "string", "minLength": 1}
+RAW_TIMESTAMP = {"type": "string"}
 BOOL = {"type": "boolean"}
 NUMBER = {"type": "number", "minimum": 0}
 INTEGER = {"type": "integer", "minimum": 0}
@@ -49,15 +51,27 @@ SCHEMAS = {
         {"code": STRING, "message": STRING, "details": array(ref("ErrorDetail"))}
     ),
     "Error": obj({"error": ref("ErrorBody")}),
-    "OrganizerMessage": obj({"timestamp": STRING, "speaker": SPEAKER, "text": STRING}),
+    "OrganizerMessage": obj(
+        {"timestamp": RAW_TIMESTAMP, "speaker": SPEAKER, "text": RAW_TEXT}
+    ),
     "OrganizerRecord": obj(
         {
             "conversation_id": STRING,
             "language": LANGUAGE,
             "channel": CHANNEL,
             "transcript": array(ref("OrganizerMessage"), minItems=1),
-            "audio_url": nullable({"type": "string", "format": "uri"}),
-        }
+            "audio_url": {
+                **nullable({"type": "string", "format": "uri"}),
+                "default": None,
+            },
+        },
+        required=["conversation_id", "language", "channel", "transcript"],
+        allOf=[
+            {
+                "if": {"properties": {"channel": {"const": "agent chat"}}},
+                "then": {"properties": {"audio_url": {"type": "null"}}},
+            }
+        ],
     ),
     "DatasetImportRequest": obj({"group_id": STRING}),
     "ConversationImportRequest": obj(
@@ -77,9 +91,9 @@ SCHEMAS = {
         {
             "id": MESSAGE_ID,
             "position": {"type": "integer", "minimum": 1},
-            "timestamp": STRING,
+            "timestamp": RAW_TIMESTAMP,
             "speaker": SPEAKER,
-            "text": STRING,
+            "text": RAW_TEXT,
         }
     ),
     "LatestEvaluation": obj(
@@ -102,7 +116,7 @@ SCHEMAS = {
             "allow_na": BOOL,
             "na_rule": nullable(STRING),
             "scale": nullable(array(ref("ScaleStep"), minItems=2)),
-            "section": nullable(STRING),
+            "section": nullable({"type": "string"}),
         },
         allOf=[
             {
@@ -124,6 +138,7 @@ SCHEMAS = {
             {
                 "if": {"properties": {"type": {"const": "scale"}}},
                 "then": {
+                    "required": ["scale"],
                     "properties": {
                         "scale": {
                             "type": "array",
@@ -132,12 +147,15 @@ SCHEMAS = {
                                 "properties": {"value": {"exclusiveMinimum": 0}}
                             },
                         }
-                    }
+                    },
                 },
             },
             {
-                "if": {"properties": {"allow_na": {"const": True}}},
-                "then": {"properties": {"na_rule": STRING}},
+                "if": {
+                    "properties": {"allow_na": {"const": True}},
+                    "required": ["allow_na"],
+                },
+                "then": {"properties": {"na_rule": STRING}, "required": ["na_rule"]},
                 "else": {"properties": {"na_rule": {"type": "null"}}},
             },
         ],
@@ -158,13 +176,31 @@ CRITERIA = array(
     minItems=1,
     contains={"properties": {"type": {"enum": ["binary", "scale"]}}},
 )
+CRITERION_DEFAULTS = {
+    "allow_na": False,
+    "na_rule": None,
+    "scale": None,
+    "section": None,
+}
+CRITERION_FIELDS = SCHEMAS["Criterion"]["properties"]
+SCHEMAS["CriterionInput"] = {
+    **SCHEMAS["Criterion"],
+    "properties": {
+        name: {**schema, "default": CRITERION_DEFAULTS[name]}
+        if name in CRITERION_DEFAULTS
+        else schema
+        for name, schema in CRITERION_FIELDS.items()
+    },
+    "required": [name for name in CRITERION_FIELDS if name not in CRITERION_DEFAULTS],
+}
+CRITERIA_INPUT = {**CRITERIA, "items": ref("CriterionInput")}
 SCHEMAS.update(
     {
-        "ChecklistCreate": obj({"name": STRING, "criteria": CRITERIA}),
+        "ChecklistCreate": obj({"name": STRING, "criteria": CRITERIA_INPUT}),
         "ChecklistVersionCreate": obj(
             {
                 "expected_version_number": {"type": "integer", "minimum": 1},
-                "criteria": CRITERIA,
+                "criteria": CRITERIA_INPUT,
             }
         ),
         "ChecklistVersion": obj(
@@ -432,11 +468,19 @@ def parameter(name, schema, location="query", required=False):
 
 
 def operation(operation_id, result, status=200, body=None, parameters=None, errors=()):
+    # All published routes access the database. Mutations also share the
+    # integrity-conflict handler, in addition to domain-specific errors.
+    error_codes = {503, *errors}
+    if body:
+        error_codes.add(409)
     result = {
         "operationId": operation_id,
         "responses": {
             str(status): response(result, "Success"),
-            **{str(code): response("Error", "Safe error") for code in errors},
+            **{
+                str(code): response("Error", "Safe error")
+                for code in sorted(error_codes)
+            },
         },
     }
     if body:

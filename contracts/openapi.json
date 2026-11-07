@@ -47,6 +47,16 @@
               }
             }
           },
+          "409": {
+            "description": "Safe error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "422": {
             "description": "Safe error",
             "content": {
@@ -104,7 +114,27 @@
               }
             }
           },
+          "409": {
+            "description": "Safe error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "422": {
+            "description": "Safe error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
             "description": "Safe error",
             "content": {
               "application/json": {
@@ -142,6 +172,16 @@
             }
           },
           "422": {
+            "description": "Safe error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
             "description": "Safe error",
             "content": {
               "application/json": {
@@ -243,6 +283,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "Safe error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "parameters": [
@@ -290,6 +340,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "Safe error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "parameters": [
@@ -329,7 +389,27 @@
               }
             }
           },
+          "409": {
+            "description": "Safe error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "422": {
+            "description": "Safe error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
             "description": "Safe error",
             "content": {
               "application/json": {
@@ -385,6 +465,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "Safe error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "parameters": [
@@ -425,6 +515,16 @@
             }
           },
           "422": {
+            "description": "Safe error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
             "description": "Safe error",
             "content": {
               "application/json": {
@@ -491,6 +591,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "Safe error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "requestBody": {
@@ -531,6 +641,16 @@
             }
           },
           "422": {
+            "description": "Safe error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
             "description": "Safe error",
             "content": {
               "application/json": {
@@ -610,6 +730,16 @@
               }
             }
           },
+          "409": {
+            "description": "Safe error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "422": {
             "description": "Safe error",
             "content": {
@@ -676,6 +806,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "Safe error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "parameters": [
@@ -734,6 +874,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "Safe error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "requestBody": {
@@ -774,6 +924,16 @@
             }
           },
           "422": {
+            "description": "Safe error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
             "description": "Safe error",
             "content": {
               "application/json": {
@@ -862,6 +1022,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "Safe error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "parameters": [
@@ -912,6 +1082,16 @@
             }
           },
           "422": {
+            "description": "Safe error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
             "description": "Safe error",
             "content": {
               "application/json": {
@@ -1027,9 +1207,7 @@
         "type": "object",
         "properties": {
           "timestamp": {
-            "type": "string",
-            "minLength": 1,
-            "pattern": "\\S"
+            "type": "string"
           },
           "speaker": {
             "enum": [
@@ -1041,8 +1219,7 @@
           },
           "text": {
             "type": "string",
-            "minLength": 1,
-            "pattern": "\\S"
+            "minLength": 1
           }
         },
         "required": [
@@ -1089,17 +1266,35 @@
               {
                 "type": "null"
               }
-            ]
+            ],
+            "default": null
           }
         },
         "required": [
           "conversation_id",
           "language",
           "channel",
-          "transcript",
-          "audio_url"
+          "transcript"
         ],
-        "additionalProperties": false
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "channel": {
+                  "const": "agent chat"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "audio_url": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        ]
       },
       "DatasetImportRequest": {
         "type": "object",
@@ -1186,9 +1381,7 @@
             "minimum": 1
           },
           "timestamp": {
-            "type": "string",
-            "minLength": 1,
-            "pattern": "\\S"
+            "type": "string"
           },
           "speaker": {
             "enum": [
@@ -1200,8 +1393,7 @@
           },
           "text": {
             "type": "string",
-            "minLength": 1,
-            "pattern": "\\S"
+            "minLength": 1
           }
         },
         "required": [
@@ -1346,9 +1538,7 @@
           "section": {
             "anyOf": [
               {
-                "type": "string",
-                "minLength": 1,
-                "pattern": "\\S"
+                "type": "string"
               },
               {
                 "type": "null"
@@ -1426,6 +1616,9 @@
               }
             },
             "then": {
+              "required": [
+                "scale"
+              ],
               "properties": {
                 "scale": {
                   "type": "array",
@@ -1447,7 +1640,10 @@
                 "allow_na": {
                   "const": true
                 }
-              }
+              },
+              "required": [
+                "allow_na"
+              ]
             },
             "then": {
               "properties": {
@@ -1456,7 +1652,10 @@
                   "minLength": 1,
                   "pattern": "\\S"
                 }
-              }
+              },
+              "required": [
+                "na_rule"
+              ]
             },
             "else": {
               "properties": {
@@ -1517,6 +1716,196 @@
           }
         ]
       },
+      "CriterionInput": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S"
+          },
+          "instruction": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S"
+          },
+          "type": {
+            "enum": [
+              "binary",
+              "scale",
+              "flag"
+            ]
+          },
+          "weight": {
+            "type": "number",
+            "minimum": 0
+          },
+          "allow_na": {
+            "type": "boolean",
+            "default": false
+          },
+          "na_rule": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "scale": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ScaleStep"
+                },
+                "minItems": 2
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "section": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "instruction",
+          "type",
+          "weight"
+        ],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "type": {
+                  "const": "flag"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "weight": {
+                  "const": 0
+                },
+                "scale": {
+                  "type": "null"
+                },
+                "allow_na": {
+                  "const": false
+                },
+                "na_rule": {
+                  "type": "null"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "weight": {
+                  "exclusiveMinimum": 0
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "type": {
+                  "const": "binary"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "scale": {
+                  "type": "null"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "type": {
+                  "const": "scale"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "scale"
+              ],
+              "properties": {
+                "scale": {
+                  "type": "array",
+                  "minItems": 2,
+                  "contains": {
+                    "properties": {
+                      "value": {
+                        "exclusiveMinimum": 0
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "allow_na": {
+                  "const": true
+                }
+              },
+              "required": [
+                "allow_na"
+              ]
+            },
+            "then": {
+              "properties": {
+                "na_rule": {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "\\S"
+                }
+              },
+              "required": [
+                "na_rule"
+              ]
+            },
+            "else": {
+              "properties": {
+                "na_rule": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        ]
+      },
       "ChecklistCreate": {
         "type": "object",
         "properties": {
@@ -1528,7 +1917,7 @@
           "criteria": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/Criterion"
+              "$ref": "#/components/schemas/CriterionInput"
             },
             "minItems": 1,
             "contains": {
@@ -1559,7 +1948,7 @@
           "criteria": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/Criterion"
+              "$ref": "#/components/schemas/CriterionInput"
             },
             "minItems": 1,
             "contains": {

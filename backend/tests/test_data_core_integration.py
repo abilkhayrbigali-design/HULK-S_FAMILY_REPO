@@ -22,6 +22,9 @@ def test_data_api_with_shared_errors_and_request_middleware(settings, caplog):
         checklist = client.get("/api/v1/checklists").json()["items"][0]
         version = client.get(f"/api/v1/checklist-versions/{checklist['latest_version_id']}").json()
 
+        operation = client.get("/openapi.json").json()["paths"]["/api/v1/checklists"]["post"]
+        assert {"201", "409", "422", "503"} <= operation["responses"].keys()
+
         def fail_commit(connection):
             raise OperationalError("synthetic-private-sql", {}, Exception("synthetic-private-db"))
 
@@ -42,7 +45,7 @@ def test_data_api_with_shared_errors_and_request_middleware(settings, caplog):
         errors = [r for r in caplog.records if r.name == "cqa.errors"]
         assert len(requests) == len(errors) == 1
         assert "error=DATABASE_UNAVAILABLE" in requests[0].getMessage()
-        assert all(r.levelname == "ERROR" for r in requests + errors)
+        assert requests[0].levelname == errors[0].levelname == "ERROR"
         assert "event=checklist_version_saved" not in caplog.text
         assert "synthetic-private" not in response.text + caplog.text
         assert client.get("/api/v1/checklists").json()["total"] == 1

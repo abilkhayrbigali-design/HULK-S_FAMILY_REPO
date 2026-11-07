@@ -26,7 +26,7 @@ const audio = z
   .string()
   .refine(safeAudioUrl, "Нужна корректная HTTP(S)-ссылка")
   .nullable();
-const messageInput = z.object({
+const messageInput = z.strictObject({
   timestamp: z.string(),
   speaker,
   text: z.string().min(1),
@@ -37,7 +37,7 @@ export const organizerRecordSchema = z
     language: languageSchema,
     channel: channelSchema,
     transcript: z.array(messageInput).min(1),
-    audio_url: audio,
+    audio_url: audio.default(null),
   })
   .strict()
   .refine((r) => r.channel !== "agent chat" || r.audio_url === null, {

@@ -144,6 +144,10 @@ def test_production_factory_wire_smoke_and_persistence(tmp_path, caplog):
     marker = "SYNTHETIC_PRIVATE_INTEGRATION"
     payload = fixture("import.request.json")
     payload["records"][0]["transcript"][0]["text"] = marker
+    payload["records"][0]["transcript"][0]["timestamp"] = ""
+    payload["records"][0]["transcript"][1]["text"] = " "
+    del payload["records"][0]["audio_url"]
+    validator("ConversationImportRequest").validate(payload)
     origin = {"Origin": "http://localhost:5173"}
 
     def verify(response, method, route, status):
@@ -169,16 +173,26 @@ def test_production_factory_wire_smoke_and_persistence(tmp_path, caplog):
         detail_url = f"/api/v1/conversations/{conversation_id}"
         detail = verify(client.get(detail_url), "get", "/api/v1/conversations/{id}", 200)
         assert detail["messages"][0]["text"] == marker
+        assert detail["messages"][0]["timestamp"] == ""
+        assert detail["messages"][1]["text"] == " "
+        assert detail["audio_url"] is None
         assert detail["latest_evaluation"] is None
 
         seed_list = verify(client.get("/api/v1/checklists"), "get", "/api/v1/checklists", 200)
         assert len(seed_list["items"]) == 1
+        create_payload = fixture("checklist.initial.json")
+        initial = create_payload["criteria"][0]
+        for field in ("allow_na", "scale", "na_rule"):
+            del initial[field]
+        initial["section"] = ""
+        validator("ChecklistCreate").validate(create_payload)
         original = verify(
-            client.post("/api/v1/checklists", json=fixture("checklist.initial.json")),
+            client.post("/api/v1/checklists", json=create_payload),
             "post",
             "/api/v1/checklists",
             201,
         )
+        assert original["criteria"][0] == dict(initial, allow_na=False, scale=None, na_rule=None)
         url = f"/api/v1/checklists/{original['checklist_id']}"
         criteria = deepcopy(original["criteria"])
         criteria[0]["weight"] += 1
