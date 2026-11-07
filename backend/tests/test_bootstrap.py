@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from pydantic import BaseModel, ValidationError
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
+from starlette.exceptions import HTTPException
 
 from app.config import PROJECT_ROOT, ConfigurationUnavailable, Settings
 from app.main import create_app
@@ -144,6 +145,55 @@ def test_errors_and_request_logs_never_echo_private_payloads(settings, caplog):
     assert "synthetic-private-transcript" not in combined
     assert "synthetic-signature" not in combined
     assert "Traceback" not in caplog.text
+
+
+def test_method_not_allowed_preserves_allow_header_and_safe_body(settings):
+    with TestClient(create_app(settings)) as client:
+        response = client.post("/health", headers={"Origin": "http://localhost:5173"})
+    assert response.status_code == 405
+    assert response.headers["allow"] == "GET"
+    assert response.headers["content-type"] == "application/json"
+    assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
+    assert response.json() == {
+        "error": {
+            "code": "METHOD_NOT_ALLOWED",
+            "message": "Method not allowed.",
+            "details": [],
+        }
+    }
+
+
+def test_http_error_preserves_retry_after_without_private_headers_or_detail(settings, caplog):
+    app = create_app(settings)
+
+    @app.get("/test/rate-limited")
+    def rate_limited():
+        raise HTTPException(
+            status_code=429,
+            detail="synthetic-private-transcript",
+            headers={
+                "rEtRy-AfTeR": "30",
+                "Content-Type": "text/plain",
+                "Location": "https://example.invalid?sig=synthetic-signature",
+                "X-Private-Detail": "synthetic-private-transcript",
+            },
+        )
+
+    with TestClient(app) as client, caplog.at_level(logging.INFO, logger="cqa.requests"):
+        response = client.get("/test/rate-limited")
+    assert response.status_code == 429
+    assert response.headers["retry-after"] == "30"
+    assert response.headers["content-type"] == "application/json"
+    assert "location" not in response.headers
+    assert "x-private-detail" not in response.headers
+    assert response.json()["error"] == {
+        "code": "HTTP_ERROR",
+        "message": "Request could not be completed.",
+        "details": [],
+    }
+    rendered = response.text + str(response.headers) + caplog.text
+    assert "synthetic-signature" not in rendered
+    assert "synthetic-private-transcript" not in rendered
 
 
 def test_cors_only_allows_configured_origins(settings):

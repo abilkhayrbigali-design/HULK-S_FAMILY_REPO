@@ -27,11 +27,17 @@ class Health(BaseModel):
 
 
 def error_response(
-    status: int, code: str, message: str, details: list | None = None
+    status: int,
+    code: str,
+    message: str,
+    details: list | None = None,
+    *,
+    headers: dict[str, str] | None = None,
 ) -> JSONResponse:
     return JSONResponse(
         status_code=status,
         content={"error": {"code": code, "message": message, "details": details or []}},
+        headers=headers,
     )
 
 
@@ -111,7 +117,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         code, message = messages.get(
             exc.status_code, ("HTTP_ERROR", "Request could not be completed.")
         )
-        return error_response(exc.status_code, code, message)
+        # Preserve protocol metadata without forwarding private URLs or custom error details.
+        headers = {
+            name: value
+            for name, value in (exc.headers or {}).items()
+            if name.lower() in {"allow", "retry-after"}
+        }
+        return error_response(exc.status_code, code, message, headers=headers)
 
     @application.get("/health", response_model=Health)
     def health(request: Request):
