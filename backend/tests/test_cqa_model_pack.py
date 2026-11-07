@@ -289,8 +289,15 @@ def test_stage_timeout_stops_converter_children(tmp_path):
         runner.run_stage([sys.executable, "-c", script], cwd=tmp_path, env=os.environ, timeout=1)
     pid = int(marker.read_text())
     status = Path(f"/proc/{pid}/stat")
+
+    def running():
+        try:
+            return status.read_text().split()[2] not in {"Z", "X"}
+        except (FileNotFoundError, ProcessLookupError):
+            return False
+
     deadline = time.monotonic() + 2
-    while status.exists() and status.read_text().split()[2] != "Z" and time.monotonic() < deadline:
+    while running() and time.monotonic() < deadline:
         time.sleep(0.02)
     # A zombie awaits kernel reaping but cannot keep computing or converting.
-    assert not status.exists() or status.read_text().split()[2] == "Z"
+    assert not running()
