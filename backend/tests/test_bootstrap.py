@@ -1,8 +1,10 @@
 import logging
+import traceback
 from unittest.mock import patch
 
 import pytest
-from fastapi import Depends
+from fastapi import BackgroundTasks, Depends
+from fastapi.responses import StreamingResponse
 from fastapi.testclient import TestClient
 from pydantic import BaseModel, ValidationError
 from sqlalchemy import text
@@ -108,15 +110,38 @@ def test_dotenv_loading_and_environment_override(tmp_path, monkeypatch):
         {"CQA_LLM_TIMEOUT_SECONDS": 0},
         {"CQA_EVALUATION_CONCURRENCY": 0},
         {"CQA_DATABASE_URL": "postgresql://localhost/db"},
+        {"CQA_DATABASE_URL": "sqlite://user:synthetic-signature@/tmp/cqa.sqlite3"},
+        {"CQA_DATABASE_URL": "sqlite://:1234/tmp/cqa.sqlite3"},
         {"CQA_ALLOWED_ORIGINS": "*"},
         {"CQA_ALLOWED_ORIGINS": "http://localhost:5173/path"},
+        {"CQA_ALLOWED_ORIGINS": "http://localhost:bad"},
+        {"CQA_ALLOWED_ORIGINS": "http://localhost:70000"},
+        {"CQA_ALLOWED_ORIGINS": "https://[synthetic-signature]"},
+        {"CQA_ALLOWED_ORIGINS": "http://local\nhost:5173"},
+        {"CQA_ALLOWED_ORIGINS": "http://localhost:5173?"},
+        {"CQA_ALLOWED_ORIGINS": "http://localhost:5173#"},
         {"CQA_DATASET_API_URL": "http://example.invalid?sig=synthetic-signature"},
+        {"CQA_DATASET_API_URL": "https://[synthetic-signature]"},
+        {"CQA_DATASET_API_URL": "https://example.invalid:bad/api"},
+        {"CQA_DATASET_API_URL": "https://example.invalid:70000/api"},
+        {"CQA_DATASET_API_URL": "https://example.invalid\n/api"},
     ],
 )
 def test_invalid_configuration_is_rejected_without_echoing_secret(values):
     with pytest.raises(ValidationError) as error:
         Settings(_env_file=None, **values)
     assert "synthetic-signature" not in str(error.value)
+
+
+def test_valid_http_settings_preserve_signed_url_and_support_ipv6():
+    signed_url = "https://[::1]:8443/api?sig=synthetic%2Bsignature&group_id=DEV"
+    settings = Settings(
+        _env_file=None,
+        CQA_DATASET_API_URL=signed_url,
+        CQA_ALLOWED_ORIGINS=" http://localhost:5173, https://[::1]:8443 ",
+    )
+    assert settings.dataset_api_url.get_secret_value() == signed_url
+    assert settings.cors_origins == ["http://localhost:5173", "https://[::1]:8443"]
 
 
 def test_errors_and_request_logs_never_echo_private_payloads(settings, caplog):
@@ -145,6 +170,37 @@ def test_errors_and_request_logs_never_echo_private_payloads(settings, caplog):
     assert "synthetic-private-transcript" not in combined
     assert "synthetic-signature" not in combined
     assert "Traceback" not in caplog.text
+
+
+@pytest.mark.parametrize("failure_phase", ["background", "stream"])
+def test_errors_after_response_start_do_not_expose_private_exceptions(
+    settings, caplog, failure_phase
+):
+    app = create_app(settings)
+    private_details = "https://example.invalid?sig=synthetic-signature"
+
+    def fail():
+        raise RuntimeError(private_details)
+
+    @app.get("/test/background-failure")
+    def background_failure(tasks: BackgroundTasks):
+        tasks.add_task(fail)
+        return {"status": "accepted"}
+
+    @app.get("/test/stream-failure")
+    def stream_failure():
+        def body():
+            yield b"partial response"
+            fail()
+
+        return StreamingResponse(body())
+
+    with TestClient(app) as client, caplog.at_level(logging.INFO, logger="cqa.requests"):
+        with pytest.raises(RuntimeError) as error:
+            client.get(f"/test/{failure_phase}-failure")
+    rendered = "".join(traceback.format_exception(error.value)) + caplog.text
+    assert "synthetic-signature" not in rendered
+    assert "INTERNAL_ERROR" in caplog.text
 
 
 def test_method_not_allowed_preserves_allow_header_and_safe_body(settings):

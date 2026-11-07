@@ -67,6 +67,8 @@ docker compose -f compose.api.yaml up --build --wait
 
 Это только API. Локальный Docker daemon недоступен, но сборка, запуск Compose и HTTP health-check успешно проверены в [GitHub Actions для 194312e](https://github.com/abilkhayrbigali-design/HULK-S_FAMILY_REPO/actions/runs/42366645190). Там же прошли 59 тестов, lint/форматирование, проверка экспортов и запуск API на Python 3.12/3.13, включая регрессию HTTP 405 с сохранением Allow. Полный Compose с клиентом и worker — A-04.
 
+Проверка ветки A-08 добавила строгую проверку URL/SQLite-настроек и защиту от раскрытия исходных исключений при отправке тела или выполнении фоновых задач ответа. Повторяющийся разбор HTTP URL объединён. Локально проходят 74 теста на Python 3.12/3.13, lint/форматирование, экспорты и отдельный HTTP smoke с проверкой CORS и серверных логов. Эти новые изменения ещё не проверены в GitHub CI или контейнере.
+
 ## Общий контракт для команды
 
 - [Описание API](docs/API_CONTRACT.md), [целевой OpenAPI](contracts/openapi.json) и [ProviderResult JSON Schema](contracts/provider-result.schema.json).

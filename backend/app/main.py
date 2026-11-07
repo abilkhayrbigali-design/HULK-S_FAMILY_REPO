@@ -16,6 +16,7 @@ from sqlalchemy import Engine, create_engine, event, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.pool import StaticPool
 from starlette.exceptions import HTTPException
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.config import ConfigurationUnavailable, Settings
 
@@ -39,6 +40,47 @@ def error_response(
         content={"error": {"code": code, "message": message, "details": details or []}},
         headers=headers,
     )
+
+
+class SafeRequestLogMiddleware:
+    """Cover the full response lifecycle without exposing upstream exception details."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        started = perf_counter()
+        response_started = False
+        status = 500
+        error_code = None
+
+        async def track_response(message: Message) -> None:
+            nonlocal response_started, status
+            if message["type"] == "http.response.start":
+                response_started = True
+                status = message["status"]
+            await send(message)
+
+        try:
+            await self.app(scope, receive, track_response)
+        except Exception:
+            error_code = "INTERNAL_ERROR"
+            if response_started:
+                # A second response would violate HTTP; let the server close an incomplete stream.
+                raise RuntimeError("Response processing failed.") from None
+            response = error_response(500, error_code, "An internal error occurred.")
+            await response(scope, receive, track_response)
+        finally:
+            logger.info(
+                "request status=%d duration_ms=%d error=%s",
+                status,
+                int((perf_counter() - started) * 1000),
+                error_code or "none",
+            )
 
 
 def build_engine(settings: Settings) -> Engine:
@@ -82,20 +124,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     logging.getLogger("httpx2").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
 
-    @application.middleware("http")
-    async def safe_request_log(request: Request, call_next):
-        started = perf_counter()
-        try:
-            response = await call_next(request)
-        except Exception:
-            # Do not log an exception/traceback: client exceptions may contain signed URLs.
-            response = error_response(500, "INTERNAL_ERROR", "An internal error occurred.")
-        logger.info(
-            "request status=%d duration_ms=%d",
-            response.status_code,
-            int((perf_counter() - started) * 1000),
-        )
-        return response
+    application.add_middleware(SafeRequestLogMiddleware)
 
     @application.exception_handler(ConfigurationUnavailable)
     async def configuration_error(_request: Request, exc: ConfigurationUnavailable):
