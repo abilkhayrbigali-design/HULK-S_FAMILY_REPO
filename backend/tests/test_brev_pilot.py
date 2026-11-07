@@ -113,10 +113,10 @@ class Tokenizer:
 
     def apply_chat_template(self, messages, **kwargs):
         assert kwargs["enable_thinking"] is False
-        return "prompt"
+        return "prompt" if kwargs["add_generation_prompt"] else "promptanswer<turn|>"
 
     def encode(self, text, **kwargs):
-        return [1, 2] if text == "prompt" else [3, 4, 5]
+        return [1, 2] if text == "prompt" else [3, 4, 5, 9]
 
 
 def test_vlm_processor_exposes_its_text_tokenizer_and_chat_template():
@@ -131,7 +131,7 @@ def test_missing_chat_template_refuses_training():
         pilot.text_tokenizer(Tokenizer())
 
 
-def test_loss_excludes_prompt_and_includes_answer_and_eos():
+def test_loss_excludes_prompt_and_includes_native_assistant_boundary():
     example = pilot.read_examples(SOURCE)[0]
     features = pilot.features(Tokenizer(), example, 6)
     assert features["input_ids"] == [1, 2, 3, 4, 5, 9]

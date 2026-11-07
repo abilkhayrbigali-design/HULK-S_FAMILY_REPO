@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "model": "google/gemma-4-E4B-it",
+  "revision": "4ecc2ba63bcac23ba4a767fc87025b1450f84c9c",
+  "license": "apache-2.0",
+  "dataset": "data/fixtures/synthetic/cqa-training-v1.jsonl",
+  "dataset_sha256": "8a29a06180ff1ca7ea28bbdb8eb61494f50eb1eb1ef07ba2c582904bce8e7383",
+  "prompt_sha256": "2b00db0f37cdf5ee9ed4bceb92425749e9fabc36eae3d047982a1cfe321116f9",
+  "format_version": "criterion-map-v1",
+  "label_source": "synthetic_author",
+  "human_ground_truth": false,
+  "local_target": "RTX 4060 Laptop 8GB / Ollama / GGUF Q4_K_M",
+  "known_status": "PREPARED_NOT_TRAINED",
+  "author_token_preflight": {
+    "status": "completed",
+    "transformers": "5.17.0",
+    "records": 165,
+    "max_total_tokens": 2455,
+    "holdout_used": false
+  },
+  "training": {
+    "max_steps": 40,
+    "max_length": 4096,
+    "max_seconds": 1800,
+    "stage_timeout_seconds": 3600,
+    "rank": 16,
+    "alpha": 16,
+    "learning_rate": 2e-05,
+    "seed": 42
+  },
+  "acceptance": {
+    "local_runtime_verified": false,
+    "quality_improvement_verified": false
+  }
+}

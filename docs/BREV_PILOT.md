@@ -28,6 +28,8 @@ GPU-обучение, установка ML-зависимостей на GPU и
 файла результатов в Git до стоп-кода, официальный mapping ID и номера реплик
 из исходного массива с 1. Это отдельная задача A-19; подготовка обучения её не реализует.
 
+Актуальный выбранный комплект Gemma 4 E4B описан в [CQA_MODEL_PREPARATION.md](CQA_MODEL_PREPARATION.md). Ниже сохранена маленькая техническая репетиция Qwen; она не заменяет выбранное обучение. Manifest теперь имеет версию 2; старый manifest не перезаписывается и не принимается как новый.
+
 ## Готовые входы и локальная проверка
 
 `data/fixtures/synthetic/brev-rehearsal.jsonl` содержит девять собственных коротких
@@ -41,7 +43,7 @@ N/A, произвольных ID и запуска; маленький авто�
 uv sync --project backend --locked
 PYTHONPATH=backend uv run --project backend --locked python tools/brev_pilot.py prepare \
   --input data/fixtures/synthetic/brev-rehearsal.jsonl \
-  --output data/private/brev/rehearsal-v1
+  --output data/private/brev/rehearsal-v2
 uv run --project backend --locked pytest backend/tests/test_brev_pilot.py -q
 ```
 
@@ -54,7 +56,8 @@ uv run --project backend --locked pytest backend/tests/test_brev_pilot.py -q
 Подготовка проверяет схему, ступени/типы, применимость, полноту критериев,
 доказательства и роли через существующую N-02. Это структурная проверка,
 которая не устанавливает семантическую правильность объяснений.
-Точные повторы диалога отклоняются даже после смены ID или чек-листа;
+Точные повторы диалога между частями отклоняются даже после смены ID или чек-листа.
+Внутри части разные чек-листы одного диалога допустимы, одинаковые задания запрещены;
 семантические перефразировки нужно контролировать при ручной подготовке.
 
 Выход содержит три JSONL и SHA-256 manifest. Существующий каталог не
@@ -70,7 +73,7 @@ uv run --project backend --locked pytest backend/tests/test_brev_pilot.py -q
 Это план расходов, не автоматический лимит Brev. Конкретная цена
 проверяется в окне создания машины, включая диск и прочие начисления.
 
-Для основного кандидата Qwen3.5-9B ориентир — одна L40S 48 ГБ с Linux и
+Для выбранной Gemma 4 E4B ориентир — одна L40S 48 ГБ с Linux и
 окружением PyTorch/CUDA. Публичный каталог показывал пример около $1.77/час
 с диском; это не гарантия ставки или доступности в аккаунте пользователя.
 Вначале выполняется двухшаговый smoke на 0.8B, затем проверяется загрузка 9B
@@ -97,7 +100,7 @@ python -m pip freeze > data/private/brev/requirements.freeze.txt
 
 PYTHONPATH=backend python tools/brev_pilot.py prepare \
   --input data/fixtures/synthetic/brev-rehearsal.jsonl \
-  --output data/private/brev/rehearsal-v1
+  --output data/private/brev/rehearsal-v2
 ```
 
 Установка идёт в отдельное окружение. ML-зависимости пока не имеют проверенного
@@ -107,7 +110,7 @@ GPU lock-файла; после smoke необходимо сохранить в
 ```bash
 BREV_MODEL_REVISION=$(python -c 'from huggingface_hub import HfApi; print(HfApi().model_info("Qwen/Qwen3.5-0.8B").sha)')
 PYTHONPATH=backend python tools/brev_pilot.py train \
-  --dataset data/private/brev/rehearsal-v1 \
+  --dataset data/private/brev/rehearsal-v2 \
   --output data/private/brev/smoke-0.8b-v1 \
   --model Qwen/Qwen3.5-0.8B --revision "$BREV_MODEL_REVISION" \
   --steps 2 --max-length 2048 --max-seconds 900

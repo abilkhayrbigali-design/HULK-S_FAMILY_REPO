@@ -1,0 +1,7 @@
+# GPU-only environment. Backend dependencies are included by the compile command.
+unsloth==2026.11.3
+unsloth_zoo==2026.11.3
+transformers==5.17.0
+jinja2==3.1.6
+torch==2.10.0
+torchvision==0.25.0
