@@ -34,7 +34,43 @@ N-02 предоставляет `app.evaluation.scoring.build_assessment`. Пе�
 
 Usage содержит request_count и nullable счётчики input/output/total/cached-input/reasoning-output. Счётчики суммируются по всем попыткам; cached/reasoning — части input/output, их нельзя прибавлять повторно. При неполном usage агрегат соответствующего счётчика null. SDK retry должен быть отключён или включён в общий предел `1 + llm_max_retries`. Неизвестная стоимость null. Границу ошибки pipeline нужно подтвердить с C при реализации; полный текст исключения наружу не передаётся.
 
-Схема ProviderResult предназначена для проверки внутреннего результата. Не передавайте её целиком в Structured Outputs без адаптации: API модели поддерживает подмножество JSON Schema. Конкретные Pydantic-типы/классы провайдера остаются в зоне N, семантические проверки — тоже.
+Адаптер `app.evaluation.openai_provider` строит схему Structured Outputs из
+модели ответов по критериям. Метаданные провайдера добавляет сервер.
+Адаптер проверяет структуру и ссылки через N-02 перед возвратом результата.
+Worker повторно проверяет ответ относительно независимо сохранённого ID
+транскрипта и считает баллы.
+
+Абулхаир может использовать следующий порядок запуска. Контекст провайдера
+охватывает весь lifespan приложения, поэтому SDK закрывается после worker.
+`main.py` и `config.py` остаются в зоне интегратора.
+
+```python
+import uvicorn
+
+from app.config import Settings
+from app.evaluation.openai_provider import PROMPT_VERSION, openai_provider
+from app.main import create_app
+
+
+async def serve():
+    settings = Settings()
+    async with openai_provider(settings) as provider:
+        app = create_app(settings, provider=provider, prompt_version=PROMPT_VERSION)
+        config = uvicorn.Config(app, host="127.0.0.1", port=8000, access_log=False)
+        await uvicorn.Server(config).serve()
+```
+
+Для живой проверки после подключения импортируйте новый синтетический диалог,
+создайте запуск через POST `/api/v1/evaluations` и дождитесь `completed` в
+GET `/api/v1/evaluations/{id}`. Сверьте сохранённые баллы и доказательства.
+Отметьте фактически запрошенную и сообщённую модель, `request_count`,
+`duration_ms`, `usage` и доступную стоимость. Тест с перехватом транспорта
+проверяет этот путь локально. Доступ к модели подтверждает только живой вызов.
+
+Журнал `cqa.evaluation` пишет `provider_started`, `provider_retry`,
+`provider_completed` и `provider_failed`. Для воспроизведения отказа используйте
+синтетический ответ с неизвестным ID доказательства или тестовый 429. Записи
+содержат фиксированные коды, счётчики и длительность.
 
 ## Артём — R-01/R-02
 

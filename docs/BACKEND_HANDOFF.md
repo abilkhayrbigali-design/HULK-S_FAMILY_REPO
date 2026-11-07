@@ -14,9 +14,10 @@ worker на общем engine. Lifespan завершает worker перед з�
 Очередь запускается на файловой SQLite. Режим `:memory:` используется
 для проверок без worker.
 
-N-01 может передать реальный адаптер и версию промпта в
-`create_app(settings, provider=adapter, prompt_version=version)` после
-`settings.require_llm()`. Штатное приложение до N-01 запускается без адаптера.
+Фабрика `openai_provider(settings)` проверяет ключ и владеет клиентом SDK.
+Передайте адаптер и `PROMPT_VERSION` в `create_app` по примеру в
+[INTEGRATION.md](INTEGRATION.md#нурсултан--n-01n-02). Штатное приложение
+до включения этого подключения запускается без адаптера.
 POST оценки возвращает 503, а сохранённые queued завершаются с
 `AI_NOT_CONFIGURED`. Ошибки миграции и seed получают фиксированный
 `DATA_STARTUP_FAILED`; исходные исключения в журнал не попадают.
