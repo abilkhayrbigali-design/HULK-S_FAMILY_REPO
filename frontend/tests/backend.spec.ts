@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { demoRecords } from "../src/mock/fixtures";
 
-test("real SQLite/API: JSON import, reload, checklist save/history and known contract gap", async ({
+test("production app: JSON import, checklist history, reload and disabled AI", async ({
   page,
   request,
 }) => {
@@ -23,10 +23,19 @@ test("real SQLite/API: JSON import, reload, checklist save/history and known con
   await expect(page.locator("time").first()).toHaveText("00:00");
   await page.reload();
   await expect(page.getByText("Соединяю с оператором.")).toBeVisible();
-  // Backend metadata names differ from the target; do not hide the integration blocker.
-  await expect(page.getByRole("alert")).toContainText(
-    "не соответствует общему контракту",
-  );
+  const list = await (await request.get("/api/v1/checklists")).json();
+  expect(list.total).toBe(1);
+  const initial = list.items[0];
+  await page
+    .getByRole("combobox", { name: "Чек-лист", exact: true })
+    .selectOption(initial.id);
+  await expect(
+    page.getByRole("combobox", { name: "Версия", exact: true }),
+  ).toHaveValue(initial.latest_version_id);
+  await page.goto("/checklists?mode=api");
+  await expect(
+    page.getByRole("link", { name: new RegExp(initial.name) }),
+  ).toBeVisible();
   await page.goto("/checklists/new?mode=api");
   await page
     .getByLabel("Название чек-листа", { exact: true })
@@ -56,4 +65,24 @@ test("real SQLite/API: JSON import, reload, checklist save/history and known con
     )
   ).json();
   expect(old.criteria[0].weight).toBe(10);
+  const changed = await (await request.get(`/api/v1/checklists/${id}`)).json();
+  expect(
+    changed.versions.map(
+      (version: { version_number: number }) => version.version_number,
+    ),
+  ).toEqual([1, 2]);
+  const conversations = await (
+    await request.get("/api/v1/conversations")
+  ).json();
+  const unavailable = await request.post("/api/v1/evaluations", {
+    data: {
+      conversation_id: conversations.items[0].id,
+      checklist_version_id: changed.current_version.id,
+    },
+  });
+  expect(unavailable.status()).toBe(503);
+  expect((await unavailable.json()).error.code).toBe("AI_NOT_CONFIGURED");
+  expect(
+    (await (await request.get("/api/v1/evaluations")).json()).items,
+  ).toEqual([]);
 });

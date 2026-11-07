@@ -1,4 +1,5 @@
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import func, select
@@ -47,7 +48,7 @@ def page(db, statement, limit, offset, convert):
 
 @router.get("/checklists")
 def list_checklists(db: DB, limit: Limit = 50, offset: Offset = 0):
-    return page(db, select(Checklist).order_by(Checklist.id), limit, offset, checklists.metadata)
+    return page(db, select(Checklist).order_by(Checklist.id), limit, offset, checklists.summary)
 
 
 @router.post("/checklists", status_code=201)
@@ -56,18 +57,18 @@ def create_checklist(payload: ChecklistCreate, db: DB):
 
 
 @router.get("/checklists/{id}")
-def get_checklist(id: str, db: DB):
-    return checklists.detail(db, id)
+def get_checklist(id: UUID, db: DB):
+    return checklists.detail(db, str(id))
 
 
 @router.get("/checklist-versions/{id}")
-def get_version(id: str, db: DB):
-    return checklists.get_version(db, id)
+def get_version(id: UUID, db: DB):
+    return checklists.get_version(db, str(id))
 
 
 @router.post("/checklists/{id}/versions", status_code=201)
-def create_version(id: str, payload: ChecklistUpdate, db: DB):
-    return checklists.add_version(db, id, payload)
+def create_version(id: UUID, payload: ChecklistUpdate, db: DB):
+    return checklists.add_version(db, str(id), payload)
 
 
 @router.post("/conversations/import")
@@ -119,5 +120,7 @@ def list_conversations(
 
 
 @router.get("/conversations/{id}")
-def get_conversation(id: str, db: DB, transcript_version_id: str | None = None):
-    return conversations.detail(db, id, transcript_version_id)
+def get_conversation(id: UUID, db: DB, transcript_version_id: UUID | None = None):
+    return conversations.detail(
+        db, str(id), str(transcript_version_id) if transcript_version_id else None
+    )

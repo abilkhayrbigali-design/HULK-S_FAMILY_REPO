@@ -62,9 +62,12 @@ export const criterionSchema = z
     weight: number,
     allow_na: z.boolean(),
     na_rule: text.nullable(),
-    scale: z.array(z.object({ value: number, description: text })).nullable(),
+    scale: z
+      .array(z.strictObject({ value: number, description: text }))
+      .nullable(),
     section: z.string().nullable(),
   })
+  .strict()
   .superRefine((c, ctx) => {
     const issue = (path: string, message: string) =>
       ctx.addIssue({ code: "custom", path: [path], message });
@@ -99,7 +102,7 @@ export const criteriaSchema = z
     (cs) => cs.some((c) => c.type !== "flag"),
     "Нужен хотя бы один критерий с положительным весом",
   );
-export const checklistVersionSchema = z.object({
+export const checklistVersionSchema = z.strictObject({
   id,
   checklist_id: id,
   name: text,
@@ -107,13 +110,13 @@ export const checklistVersionSchema = z.object({
   created_at: z.string(),
   criteria: criteriaSchema,
 });
-export const checklistSummarySchema = z.object({
+export const checklistSummarySchema = z.strictObject({
   id,
   name: text,
   latest_version_id: id,
   latest_version_number: z.number().int().positive(),
 });
-export const checklistDetailSchema = z.object({
+export const checklistDetailSchema = z.strictObject({
   id,
   name: text,
   current_version: checklistVersionSchema,

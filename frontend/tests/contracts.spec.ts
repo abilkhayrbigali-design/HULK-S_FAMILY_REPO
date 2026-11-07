@@ -46,3 +46,26 @@ test("numeric definitions never coerce boolean/string/nonfinite values", () => {
   for (const weight of [true, "10", NaN, Infinity, -1])
     expect(criterionSchema.safeParse({ ...c, weight }).success).toBe(false);
 });
+
+test("checklist wire schemas reject legacy fields and missing or null version metadata", () => {
+  const summary = fixture("checklists.response.json").items[0];
+  const detail = fixture("checklist.response.json");
+  expect(
+    checklistSummarySchema.safeParse({ ...summary, latest_version_id: null })
+      .success,
+  ).toBe(false);
+  expect(
+    checklistSummarySchema.safeParse({
+      ...summary,
+      latest_version_number: undefined,
+    }).success,
+  ).toBe(false);
+  expect(
+    checklistDetailSchema.safeParse({ ...detail, current_version_number: 1 })
+      .success,
+  ).toBe(false);
+  expect(
+    checklistDetailSchema.safeParse({ ...detail, current_version: null })
+      .success,
+  ).toBe(false);
+});

@@ -1,6 +1,6 @@
 # API-контракт v0.1
 
-Статус: целевой контракт, 2026-11-07. Реализован серверный каркас с `/health`; бизнес-маршруты и клиент ещё отсутствуют. Базовый путь `/api/v1`, JSON UTF-8. A-02 добавляет проверяемые схемы/фикстуры; согласование Pydantic и runtime OpenAPI подтверждается после реализации C/N/R.
+Штатный API подключает маршруты данных, оценок и апелляций. При отсутствующем провайдере запуск возвращает 503 с `AI_NOT_CONFIGURED`. Базовый путь `/api/v1`, JSON UTF-8.
 
 Машинный источник структуры — `contracts/definitions.py`, экспорт — `contracts/openapi.json`; `make contracts` обновляет экспорт, `make check` проверяет схемы и собственные примеры. Текстовые бизнес-ограничения ниже обязательны и там, где JSON Schema не может проверить уникальность ID, принадлежность версии или пересчёт. Уточнения A-02 зафиксированы в D-007 и `docs/INTEGRATION.md`.
 
@@ -83,6 +83,8 @@ ID сообщения уникален в пределах версии тран
 | `GET /checklists/{id}` | `{ id, name, current_version, versions }`; current_version и элементы versions — полные ChecklistVersion |
 | `GET /checklist-versions/{id}` | Полный неизменяемый снимок `ChecklistVersion` |
 | `POST /checklists/{id}/versions` | `{ expected_version_number, criteria }` создаёт новую версию; при устаревшем номере 409 |
+
+В списке `latest_version_id` и `latest_version_number` обязательны. В карточке обязательны `current_version` и `versions`. Поля указателя версии из таблицы хранения не входят в карточку.
 
 `ChecklistVersion`: `id`, `checklist_id`, `name`, `version_number`, `created_at`, `criteria`.
 

@@ -18,7 +18,6 @@ from sqlalchemy import event, select, text
 from sqlalchemy.exc import IntegrityError, OperationalError
 
 from alembic import command
-from app.api.install import install_data_api
 from app.config import Settings
 from app.db.migrate import migrate
 from app.db.session import session_factory
@@ -116,29 +115,23 @@ def app_for(tmp_path):
     url = f"sqlite:///{tmp_path}/test.sqlite3"
 
     def make_app(provider=None, *, run=True, concurrency=2):
-        settings = Settings(_env_file=None, CQA_DATABASE_URL=url)
+        settings = Settings(
+            _env_file=None, CQA_DATABASE_URL=url, CQA_EVALUATION_CONCURRENCY=concurrency
+        )
+        if run:
+            return create_app(settings, provider=provider, prompt_version="test-v1")
         app = create_app(settings)
-        install_data_api(app)
-        core_lifespan = app.router.lifespan_context
 
         @asynccontextmanager
         async def lifespan(application):
-            async with core_lifespan(application):
-                migrate(engine=application.state.engine)
-                sessions = session_factory(application.state.engine)
-                application.state.session_factory = sessions
-                if run:
-                    async with evaluation_worker(
-                        application,
-                        sessions,
-                        provider,
-                        concurrency=concurrency,
-                        prompt_version="test-v1",
-                    ):
-                        yield
-                else:
-                    application.state.evaluation_provider = provider
-                    yield
+            engine = build_engine(settings)
+            try:
+                migrate(engine=engine)
+                application.state.session_factory = session_factory(engine)
+                application.state.evaluation_provider = provider
+                yield
+            finally:
+                engine.dispose()
 
         app.router.lifespan_context = lifespan
         return app
@@ -262,7 +255,9 @@ def test_queued_restart_pins_versions_and_preserves_decimal(app_for, caplog):
         check_schema("EvaluationPage", listed)
         assert listed["items"] == [result]
         assert client.get(f"{API}/evaluations?status=queued").json()["total"] == 0
-        latest = client.get(f"{API}/conversations/{conversation_id}").json()["latest_evaluation"]
+        conversation = client.get(f"{API}/conversations/{conversation_id}").json()
+        check_schema("ConversationDetail", conversation)
+        latest = conversation["latest_evaluation"]
         assert latest["id"] == pending["id"] and latest["original_total"] == 35.71
         with pytest.raises(IntegrityError), app.state.session_factory.begin() as db:
             db.execute(

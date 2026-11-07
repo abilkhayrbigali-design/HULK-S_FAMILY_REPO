@@ -88,7 +88,10 @@ def test_seed_versions_and_conflict(setup):
     assert client.get(f"/api/v1/checklist-versions/{original['id']}").json() == original
     with factory.begin() as db:
         seed(db)
-    assert client.get(f"/api/v1/checklists/{checklist_id}").json()["current_version_number"] == 2
+    assert (
+        client.get(f"/api/v1/checklists/{checklist_id}").json()["current_version"]["version_number"]
+        == 2
+    )
 
 
 @pytest.mark.parametrize(
@@ -225,7 +228,7 @@ def test_restart_persistence(setup, record):
 def test_concurrent_version_and_import(setup, record):
     client = setup[0]
     item = client.get("/api/v1/checklists").json()["items"][0]
-    version = client.get(f"/api/v1/checklist-versions/{item['current_version_id']}").json()
+    version = client.get(f"/api/v1/checklist-versions/{item['latest_version_id']}").json()
 
     def save(_):
         return client.post(
@@ -326,7 +329,7 @@ def test_invalid_dataset_configuration_is_safe(setup, caplog, url):
 def test_commit_failure_precedes_response_and_success_log(setup, record, caplog, operation):
     setup_client, factory, app, _ = setup
     item = setup_client.get("/api/v1/checklists").json()["items"][0]
-    criteria = setup_client.get(f"/api/v1/checklist-versions/{item['current_version_id']}").json()[
+    criteria = setup_client.get(f"/api/v1/checklist-versions/{item['latest_version_id']}").json()[
         "criteria"
     ]
     path, payload = {
@@ -372,7 +375,10 @@ def test_commit_failure_precedes_response_and_success_log(setup, record, caplog,
     assert response.json()["error"]["code"] == "DATABASE_UNAVAILABLE"
     assert setup[0].get("/api/v1/conversations").json()["total"] == 0
     assert setup[0].get("/api/v1/checklists").json()["total"] == 1
-    assert setup[0].get(f"/api/v1/checklists/{item['id']}").json()["current_version_number"] == 1
+    assert (
+        setup[0].get(f"/api/v1/checklists/{item['id']}").json()["current_version"]["version_number"]
+        == 1
+    )
     assert "dataset_import_completed" not in caplog.text
     assert "checklist_version_saved" not in caplog.text
     errors = [r for r in caplog.records if r.name == "cqa.errors"]
@@ -388,7 +394,7 @@ def test_committed_changes_emit_safe_operation_logs(setup, record, caplog):
     record["transcript"][0]["text"] = "synthetic-private-transcript"
     assert upload(client, record).status_code == 200
     version = client.get("/api/v1/checklists").json()["items"][0]
-    original = client.get(f"/api/v1/checklist-versions/{version['current_version_id']}").json()
+    original = client.get(f"/api/v1/checklist-versions/{version['latest_version_id']}").json()
     payload = dict(expected_version_number=1, criteria=original["criteria"])
     assert (
         client.post(f"/api/v1/checklists/{version['id']}/versions", json=payload).status_code == 201

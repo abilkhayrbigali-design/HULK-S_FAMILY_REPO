@@ -73,12 +73,12 @@ def get_version(session, version_id):
     return snapshot(require(session.get(ChecklistVersion, version_id)))
 
 
-def metadata(row):
+def summary(row):
     return dict(
         id=row.id,
         name=row.name,
-        current_version_number=row.current_version_number,
-        current_version_id=row.current_version_id,
+        latest_version_number=row.current_version_number,
+        latest_version_id=row.current_version_id,
     )
 
 
@@ -90,7 +90,8 @@ def detail(session, checklist_id):
         .order_by(ChecklistVersion.version_number)
     ).all()
     return dict(
-        **metadata(row),
+        id=row.id,
+        name=row.name,
         versions=[snapshot(v) for v in versions],
         current_version=get_version(session, row.current_version_id),
     )

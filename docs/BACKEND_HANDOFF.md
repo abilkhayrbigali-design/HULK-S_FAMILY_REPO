@@ -7,52 +7,19 @@
 Готовы маршруты оценок и апелляций, а также SQLite-очередь с внедряемым
 провайдером. Точки подключения к `create_app` и N-01 приведены ниже.
 
-## Подключение к серверному каркасу
+## Штатный запуск
 
-```python
-from app.api.install import install_data_api
-from app.db.migrate import migrate
-from app.db.session import session_factory
-from app.diagnostics import log_internal_error
-from app.services.evaluation_worker import evaluation_worker
-from app.services.seed import seed
+`app.main:create_app` регистрирует API и поднимает миграции, seed, сессии и
+worker на общем engine. Lifespan завершает worker перед закрытием engine.
+Очередь запускается на файловой SQLite. Режим `:memory:` используется
+для проверок без worker.
 
-# После создания приложения и до начала lifespan.
-install_data_api(app, dataset_url=settings.dataset_api_url.get_secret_value())
-
-# Внутри существующего lifespan после создания application.state.engine.
-try:
-    migrate(engine=application.state.engine)
-    sessions = session_factory(application.state.engine)
-    with sessions.begin() as db:
-        seed(db)
-except Exception as exc:
-    log_internal_error("DATA_STARTUP_FAILED", exc)
-    raise RuntimeError("DATA_STARTUP_FAILED") from None
-async with evaluation_worker(
-    application,
-    sessions,
-    provider,
-    concurrency=settings.evaluation_concurrency,
-    prompt_version=prompt_version,
-):
-    yield
-```
-
-Абулхаир передаёт `provider` после проверки `settings.require_llm()` и создания
-реального адаптера N-01. При отсутствующем ключе или адаптере передаётся `None`.
-Тогда новый POST возвращает 503, а оставшиеся queued завершаются с
-`AI_NOT_CONFIGURED`. Вызов `install_data_api` выполняется один раз.
-Миграция `c002` использует тот же engine, worker завершается до `engine.dispose()`.
-Очередь требует файловую SQLite. Режим `:memory:` с одним общим соединением
-подходит для health-check каркаса, но worker в этом режиме не запускается.
-При штатной остановке worker дожидается уже захваченных задач. Провайдер
-обеспечивает конечный таймаут и ограниченные повторы согласно N-01/N-05.
-Подписанная ссылка извлекается из SecretStr только на сервере. `/health` реализован
-интегратором. `install_data_api` использует `app.main.error_response` (по умолчанию
-либо переданный явно), включая код в HTTP-сводке; диагностика переиспользует
-`app.diagnostics.log_internal_error`. Локальные fallback-обработчики удалены
-после C-07. Конфигурацию журналов устанавливает каркас, а не модули данных.
+N-01 может передать реальный адаптер и версию промпта в
+`create_app(settings, provider=adapter, prompt_version=version)` после
+`settings.require_llm()`. Штатное приложение до N-01 запускается без адаптера.
+POST оценки возвращает 503, а сохранённые queued завершаются с
+`AI_NOT_CONFIGURED`. Ошибки миграции и seed получают фиксированный
+`DATA_STARTUP_FAILED`; исходные исключения в журнал не попадают.
 
 Миграция запускается отдельно из корня репозитория:
 
