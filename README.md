@@ -120,6 +120,7 @@ ERROR cqa.errors error=DATABASE_UNAVAILABLE locations=backend/app/main.py:123
 - [Задания для четырёх AI-агентов](docs/AGENT_TASKS.md)
 - [План функциональной проверки и оценки точности](docs/TEST_PLAN.md)
 - [Локальный пилот Qwen3.5 4B/9B: измерения и ограничения](docs/LOCAL_MODEL_PILOT.md)
+- [План использования Brev, AI API и выбора модели](docs/AI_RESOURCE_PLAN.md)
 - [Подготовка синтетического BF16 LoRA-пилота в Brev](docs/BREV_PILOT.md)
 - [Обязательная проверка всех PR агентом Sol Extra high](docs/CODE_REVIEW.md)
 - [Принятые решения и журнал изменений плана](docs/DECISIONS.md)
