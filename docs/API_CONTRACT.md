@@ -1,6 +1,8 @@
 # API-контракт v0.1
 
-Статус: согласуемый стартовый контракт, 2026-11-07. Сервер и клиент ещё не реализованы. Базовый путь `/api/v1`, JSON UTF-8. Задача A-02 фиксирует общие фикстуры этого контракта; после реализации OpenAPI сверяется с ним.
+Статус: целевой контракт, 2026-11-07. Реализован серверный каркас с `/health`; бизнес-маршруты и клиент ещё отсутствуют. Базовый путь `/api/v1`, JSON UTF-8. A-02 добавляет проверяемые схемы/фикстуры; согласование Pydantic и runtime OpenAPI подтверждается после реализации C/N/R.
+
+Машинный источник структуры — `contracts/definitions.py`, экспорт — `contracts/openapi.json`; `make contracts` обновляет экспорт, `make check` проверяет схемы и собственные примеры. Текстовые бизнес-ограничения ниже обязательны и там, где JSON Schema не может проверить уникальность ID, принадлежность версии или пересчёт. Уточнения A-02 зафиксированы в D-007 и `docs/INTEGRATION.md`.
 
 ## Общие соглашения
 
@@ -9,9 +11,11 @@
 - `language`: `RU | KZ | EN`; `channel`: `agent chat | voice call`; `speaker`: `client | operator | bot | system`.
 - Ответы обычных маршрутов не оборачиваются в `data`. Списки: `{ "items": [], "total": 0, "limit": 50, "offset": 0 }`; `limit` от 1 до 100.
 - Ошибка HTTP: `{ "error": { "code": "VALIDATION_ERROR", "message": "Понятное описание", "details": [] } }`. `details` не содержит секретов и сырых upstream-исключений.
+- Элемент `details`: `{ "loc": ["body", "records", 0, "transcript"], "type": "too_short" }`; `loc` состоит из строк/целых индексов, `type` — безопасный код, без исходного `input`, `ctx` и текста исключения.
 - Основные статусы: 200 чтение/импорт, 201 создание, 202 постановка оценки, 404 отсутствующий ресурс, 409 конфликт версии/состояния, 422 невалидный ввод, 502 сбой внешнего API, 503 недоступный AI/конфигурация.
 - Pydantic должен строго различать `false`, `0` и `null`: `0` не превращается в бинарное «Нет», `true` не превращается в числовую ступень 1.
 - Баллы и веса в JSON — конечные числа; итог может быть `null`. Интерфейс форматирует баллы до двух знаков. Внутри расчёта используются Decimal.
+- Поля объектов, перечисленные в машинной схеме, передаются явно; nullable-поле не пропускается. Неизвестные поля отклоняются стартовым контрактом; согласованное расширение требует обновления схем и потребителей.
 
 ## 1. Импорт и диалоги
 
@@ -59,6 +63,8 @@
 
 `ConversationSummary`: `id`, `external_id`, `source`, `group_id`, `language`, `channel`, `current_transcript_version_id`, `message_count`, `latest_evaluation` (краткий объект или null).
 
+`source`: `dataset` для импорта организаторов, `upload` для JSON. `latest_evaluation`: `{ id, status, original_total, final_total, created_at }`; итоги nullable до завершения или при отсутствии применимых весов. Выбирается последний созданный запуск.
+
 Карточка дополнительно содержит `transcript_version_id`, `audio_url`, `messages`. Сообщение:
 
 ```json
@@ -71,9 +77,9 @@ ID сообщения уникален в пределах версии тран
 
 | Метод и путь | Назначение |
 | --- | --- |
-| `GET /checklists` | Список чек-листов: ID, имя, номер/ID последней версии |
+| `GET /checklists` | Пагинируемый список `{ id, name, latest_version_id, latest_version_number }` |
 | `POST /checklists` | `{ name, criteria }` создаёт чек-лист и версию 1; возвращает `ChecklistVersion` |
-| `GET /checklists/{id}` | Метаданные и список версий; текущая версия включена |
+| `GET /checklists/{id}` | `{ id, name, current_version, versions }`; current_version и элементы versions — полные ChecklistVersion |
 | `GET /checklist-versions/{id}` | Полный неизменяемый снимок `ChecklistVersion` |
 | `POST /checklists/{id}/versions` | `{ expected_version_number, criteria }` создаёт новую версию; при устаревшем номере 409 |
 
@@ -130,8 +136,12 @@ ID сообщения уникален в пределах версии тран
 | `created_at`, `completed_at` | UTC; второе может быть null |
 | `original`, `final` | `Assessment` или null до завершения/при ошибке |
 | `review_required`, `review_reasons` | Признак необходимости ручной проверки и конкретные причины |
-| `provenance` | Провайдер, requested/reported модель, prompt_version, длительность, usage всех попыток, estimated_cost_usd или null |
+| `provenance` | null до вызова; иначе provider, model_requested, nullable model_reported, prompt_version, duration_ms, usage всех попыток, nullable estimated_cost_usd |
 | `error` | null или `{ code, message, details }` с безопасным содержимым |
+
+У `queued/running` completed_at/error/original/final равны null. У `failed` error и completed_at заполнены, original/final равны null. У `completed` completed_at, provenance, original/final заполнены, error=null. Revision до решений равна 0. При ошибке после оплаченного вызова известное provenance/usage сохраняется; отсутствие подтверждённого usage не заменяется нулём.
+
+`usage`: `{ request_count, input_tokens, output_tokens, total_tokens, cached_input_tokens, reasoning_output_tokens }`. request_count — неотрицательное целое, включая все попытки; каждый токенный счётчик — неотрицательное целое либо null при неизвестном/неполном значении. Cached/reasoning являются частью input/output, не прибавляются к ним повторно. Неизвестная стоимость null. Для live-завершения нужен хотя бы один фактический запрос; синтетические примеры не доказывают его выполнение.
 
 `Assessment`: `total` (0..100 или null), `no_applicable_reason` (строка или null), `gross_error` (boolean или null), `criteria`, `sections`.
 
@@ -175,6 +185,8 @@ ID сообщения уникален в пределах версии тран
 
 Внутренний ответ провайдера содержит `criterion_id`, `applicability`, `answer`, `explanation`, `evidence`, `review_reasons`; все веса/баллы добавляются только сервером. Provider-level метаданные определены в `ARCHITECTURE.md`.
 
+ProviderResult: `{ criterion_results, provider, model_requested, model_reported, usage, duration_ms, review_reasons }`; model_reported nullable, review_reasons — массив непустых строк. Структура snapshot и точная async-граница описаны в INTEGRATION.md. Общая JSON Schema проверяет внутренний результат; это не готовая схема для прямого вызова Structured Outputs. `review_required` выводится из причин результатов/провайдера при формировании Evaluation.
+
 ## 4. Апелляции и решения
 
 | Метод и путь | Вход/выход |
@@ -185,6 +197,8 @@ ID сообщения уникален в пределах версии тран
 | `POST /appeals/{id}/decisions` | Решение ниже → 200 `{ appeal, evaluation }` с пересчитанным финальным результатом |
 
 `Appeal`: `id`, `evaluation_id`, `criterion_id`, `comment`, `status=open|resolved`, `base_revision`, `current_revision`, `created_at`, `decision` или null. `comment` и причина решения непустые. Обращение допустимо только для завершённой оценки и существующего критерия.
+
+Во всех ответах Appeal также содержит `original` и `current` — полные CriterionAssessment, со всеми доказательствами и исходным весом. `decision`: `{ id, appeal_id, action, reason, expected_revision, created_at, result }`. result — полный принятый ProviderCriterionResult без вычисляемых весов; confirm фиксирует текущий финальный ответ, override — новый. Открытый Appeal имеет decision=null, resolved — сохранённое решение. Историю обращений можно получить фильтром `GET /appeals?evaluation_id=...`.
 
 Подтверждение:
 

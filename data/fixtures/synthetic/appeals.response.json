@@ -1,0 +1,54 @@
+{
+  "items": [
+    {
+      "id": "00000000-0000-4000-8000-000000000006",
+      "evaluation_id": "00000000-0000-4000-8000-000000000005",
+      "criterion_id": "navigation_custom",
+      "comment": "Синтетический пример апелляции.",
+      "status": "open",
+      "base_revision": 0,
+      "current_revision": 0,
+      "created_at": "2026-11-07T09:00:00Z",
+      "decision": null,
+      "original": {
+        "criterion_id": "navigation_custom",
+        "applicability": "applicable",
+        "answer": 5,
+        "explanation": "Синтетический пример структуры ответа. Это не экспертная разметка.",
+        "evidence": [
+          {
+            "kind": "message",
+            "message_id": "m0002"
+          }
+        ],
+        "review_reasons": [],
+        "weight": 60,
+        "base_points": 30,
+        "effective_weight": 60,
+        "effective_points": 30,
+        "review_required": false
+      },
+      "current": {
+        "criterion_id": "navigation_custom",
+        "applicability": "applicable",
+        "answer": 5,
+        "explanation": "Синтетический пример структуры ответа. Это не экспертная разметка.",
+        "evidence": [
+          {
+            "kind": "message",
+            "message_id": "m0002"
+          }
+        ],
+        "review_reasons": [],
+        "weight": 60,
+        "base_points": 30,
+        "effective_weight": 60,
+        "effective_points": 30,
+        "review_required": false
+      }
+    }
+  ],
+  "total": 1,
+  "limit": 50,
+  "offset": 0
+}
