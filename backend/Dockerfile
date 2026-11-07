@@ -7,6 +7,8 @@ WORKDIR /srv/cqa/backend
 COPY backend/pyproject.toml backend/uv.lock ./
 RUN uv sync --locked --no-dev --no-install-project
 COPY backend/app ./app
+COPY backend/alembic ./alembic
+COPY contracts/openapi.json /srv/cqa/contracts/openapi.json
 RUN uv sync --locked --no-dev && \
     useradd --create-home --uid 10001 cqa && \
     mkdir -p /srv/cqa/data/private && chown -R cqa:cqa /srv/cqa

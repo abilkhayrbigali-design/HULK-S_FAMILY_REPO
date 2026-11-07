@@ -7,7 +7,13 @@
   "channel": "agent chat",
   "current_transcript_version_id": "00000000-0000-4000-8000-000000000002",
   "message_count": 4,
-  "latest_evaluation": null,
+  "latest_evaluation": {
+    "id": "00000000-0000-4000-8000-000000000005",
+    "status": "completed",
+    "original_total": 70,
+    "final_total": 70,
+    "created_at": "2026-11-07T09:00:00Z"
+  },
   "transcript_version_id": "00000000-0000-4000-8000-000000000002",
   "audio_url": null,
   "messages": [

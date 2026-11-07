@@ -106,6 +106,7 @@ def _summary(session, row, version, message_count):
             dict(
                 id=latest.id,
                 status=latest.status,
+                created_at=latest.created_at,
                 original_total=latest.original["total"] if latest.original else None,
                 final_total=latest.final["total"] if latest.final else None,
             )
