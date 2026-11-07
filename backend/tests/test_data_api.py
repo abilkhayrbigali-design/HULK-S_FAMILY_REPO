@@ -12,8 +12,8 @@ from app.services.datasets import dataset_url
 from app.services.seed import seed
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import event, text
+from sqlalchemy.exc import IntegrityError, OperationalError
 
 
 @pytest.fixture
@@ -259,6 +259,7 @@ def test_concurrent_version_and_import(setup, record):
 
 def test_dataset_new_group_and_errors(setup, record, caplog):
     client, _, app, _ = setup
+    caplog.set_level("DEBUG")
     url = "https://example.invalid/api?sig=synthetic%2Bsecret%2f&group_id=OLD&group_id=STALE&x="
     changed = dataset_url(url, "NEW GROUP")
     assert "sig=synthetic%2Bsecret%2f" in changed
@@ -294,3 +295,178 @@ def test_dataset_new_group_and_errors(setup, record, caplog):
         client.post("/api/v1/datasets/import", json={"group_id": "DEV"}).status_code
         == 503
     )
+
+
+def test_validation_does_not_echo_unknown_field_names(setup, record):
+    record["https://example.invalid/?sig=synthetic-private-field"] = "extra"
+    response = upload(setup[0], record)
+    assert response.status_code == 422
+    assert "synthetic-private-field" not in response.text
+    assert response.json()["error"]["details"][0]["location"] == ["body", "records", 0]
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://example.invalid:invalid/audio",
+        "https://example.invalid:70000/audio",
+        "https://example.invalid/\naudio",
+        "https://example.invalid/ audio",
+        "https://@example.invalid/audio",
+    ],
+)
+def test_invalid_audio_urls_are_rejected(setup, record, url):
+    record.update(channel="voice call", audio_url=url)
+    assert upload(setup[0], record).status_code == 422
+    assert setup[0].get("/api/v1/conversations").json()["total"] == 0
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://example.invalid:invalid/api?sig=synthetic-private-url",
+        "https://example.invalid:70000/api?sig=synthetic-private-url",
+        "https://[invalid/api?sig=synthetic-private-url",
+        "https://example.invalid/\napi?sig=synthetic-private-url",
+        "https://example.invalid/api?sig=synthetic-private-url#fragment",
+        "https://@example.invalid/api?sig=synthetic-private-url",
+    ],
+)
+def test_invalid_dataset_configuration_is_safe(setup, caplog, url):
+    _, _, app, _ = setup
+    app.state.dataset_url = url
+    with TestClient(app, raise_server_exceptions=False) as client:
+        response = client.post("/api/v1/datasets/import", json={"group_id": "DEV"})
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "DATASET_UNAVAILABLE"
+    assert "synthetic-private-url" not in response.text + caplog.text
+
+
+@pytest.mark.parametrize("operation", ["upload", "dataset", "checklist", "version"])
+def test_commit_failure_precedes_response_and_success_log(
+    setup, record, caplog, operation
+):
+    setup_client, factory, app, _ = setup
+    item = setup_client.get("/api/v1/checklists").json()["items"][0]
+    criteria = setup_client.get(
+        f"/api/v1/checklist-versions/{item['current_version_id']}"
+    ).json()["criteria"]
+    path, payload = {
+        "upload": ("/api/v1/conversations/import", {"records": [record]}),
+        "dataset": ("/api/v1/datasets/import", {"group_id": "DEV"}),
+        "checklist": (
+            "/api/v1/checklists",
+            {"name": "Synthetic", "criteria": criteria},
+        ),
+        "version": (
+            f"/api/v1/checklists/{item['id']}/versions",
+            {"expected_version_number": 1, "criteria": criteria},
+        ),
+    }[operation]
+    app.state.dataset_url = "https://example.invalid/api?sig=synthetic-private-url"
+    app.state.dataset_transport = httpx.MockTransport(
+        lambda req: httpx.Response(
+            200,
+            json={
+                "error": None,
+                "isSuccess": True,
+                "data": {
+                    "dataset_group_id": "DEV",
+                    "total_records": 1,
+                    "records": [record],
+                },
+            },
+        )
+    )
+    caplog.set_level("INFO", logger="cqa")
+
+    def fail_commit(connection):
+        raise OperationalError(
+            "synthetic-private-sql", {}, Exception("synthetic-private-db")
+        )
+
+    engine = factory.kw["bind"]
+    event.listen(engine, "commit", fail_commit)
+    try:
+        with TestClient(app, raise_server_exceptions=False) as client:
+            response = client.post(path, json=payload)
+    finally:
+        event.remove(engine, "commit", fail_commit)
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "DATABASE_UNAVAILABLE"
+    assert setup[0].get("/api/v1/conversations").json()["total"] == 0
+    assert setup[0].get("/api/v1/checklists").json()["total"] == 1
+    assert (
+        setup[0]
+        .get(f"/api/v1/checklists/{item['id']}")
+        .json()["current_version_number"]
+        == 1
+    )
+    assert "dataset_import_completed" not in caplog.text
+    assert "checklist_version_saved" not in caplog.text
+    errors = [r for r in caplog.records if r.name == "cqa.errors"]
+    assert len(errors) == 1
+    assert errors[0].levelname == "ERROR"
+    assert "DATABASE_UNAVAILABLE" in errors[0].getMessage()
+    assert "synthetic-private" not in response.text + caplog.text
+
+
+def test_committed_changes_emit_safe_operation_logs(setup, record, caplog):
+    client = setup[0]
+    caplog.set_level("INFO", logger="cqa")
+    record["transcript"][0]["text"] = "synthetic-private-transcript"
+    assert upload(client, record).status_code == 200
+    version = client.get("/api/v1/checklists").json()["items"][0]
+    original = client.get(
+        f"/api/v1/checklist-versions/{version['current_version_id']}"
+    ).json()
+    payload = dict(expected_version_number=1, criteria=original["criteria"])
+    assert (
+        client.post(
+            f"/api/v1/checklists/{version['id']}/versions", json=payload
+        ).status_code
+        == 201
+    )
+    assert (
+        client.post(
+            f"/api/v1/checklists/{version['id']}/versions", json=payload
+        ).status_code
+        == 409
+    )
+    assert "event=dataset_import_completed" in caplog.text
+    assert "records=1 created=1 new_versions=0 unchanged=0" in caplog.text
+    assert caplog.text.count("event=checklist_version_saved") == 1
+    assert any(
+        r.levelname == "WARNING" and "VERSION_CONFLICT" in r.getMessage()
+        for r in caplog.records
+    )
+    assert "synthetic-private" not in caplog.text
+
+
+def test_signed_audio_url_is_preserved(setup, record, caplog):
+    record.update(
+        channel="voice call",
+        audio_url="https://example.invalid:443/audio?sig=synthetic-private%2Bvalue%2f",
+    )
+    response = upload(setup[0], record)
+    assert response.status_code == 200
+    conversation_id = response.json()["conversation_ids"][0]
+    assert (
+        setup[0].get(f"/api/v1/conversations/{conversation_id}").json()["audio_url"]
+        == record["audio_url"]
+    )
+    assert "synthetic-private" not in caplog.text
+
+
+def test_migration_cli_failure_is_safe(monkeypatch, caplog):
+    from app.db import migrate as migration
+
+    def fail(url):
+        raise OperationalError("synthetic-private-sql", {}, Exception(url))
+
+    monkeypatch.setattr(migration, "migrate", fail)
+    assert migration.main(["sqlite:///synthetic-private-path"]) == 1
+    assert "MIGRATION_FAILED" in caplog.text
+    assert "synthetic-private" not in caplog.text
+    assert migration.main([]) == 1
+    assert "MIGRATION_INVALID_ARGUMENTS" in caplog.text

@@ -3,68 +3,69 @@
 import logging
 
 from app.api.routes.data import router
-from app.services.errors import ServiceError
+from app.services.errors import ServiceError, log_internal_error
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError, OperationalError
 
 
-def install_data_api(app, session_factory, *, dataset_url=""):
+def _error_response(status, code, message, details=None, *, request):
+    # Standalone fallback until the integrator supplies app.main.error_response.
+    request.scope.setdefault("state", {})["_cqa_error_code"] = code
+    return JSONResponse(
+        status_code=status,
+        content={"error": {"code": code, "message": message, "details": details or []}},
+    )
+
+
+def install_data_api(app, session_factory, *, dataset_url="", error_response=None):
+    respond = error_response or _error_response
     app.state.session_factory = session_factory
     app.state.dataset_url = dataset_url
     # These clients otherwise log complete signed URLs at INFO/DEBUG, even on success.
-    for name in ("httpx", "httpcore"):
+    for name in ("httpx", "httpx2", "httpcore"):
         logging.getLogger(name).setLevel(logging.CRITICAL)
     app.include_router(router)
 
     @app.exception_handler(ServiceError)
     async def service_error(request, exc):
-        return JSONResponse(
-            status_code=exc.status,
-            content={
-                "error": {"code": exc.code, "message": exc.message, "details": []}
-            },
-        )
+        return respond(exc.status, exc.code, exc.message, request=request)
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(request, exc):
         # Never return Pydantic input/ctx/message: input may contain signed audio URLs.
-        return JSONResponse(
-            status_code=422,
-            content={
-                "error": {
-                    "code": "VALIDATION_ERROR",
-                    "message": "Некорректные входные данные",
-                    "details": [
-                        {"location": list(e["loc"]), "type": e["type"]}
-                        for e in exc.errors()
-                    ],
+        return respond(
+            422,
+            "VALIDATION_ERROR",
+            "Некорректные входные данные",
+            [
+                {
+                    # Unknown field names are untrusted input, too.
+                    "location": list(
+                        e["loc"][:-1] if e["type"] == "extra_forbidden" else e["loc"]
+                    ),
+                    "type": e["type"],
                 }
-            },
+                for e in exc.errors()
+            ],
+            request=request,
         )
 
     @app.exception_handler(IntegrityError)
     async def integrity_error(request, exc):
-        return JSONResponse(
-            status_code=409,
-            content={
-                "error": {
-                    "code": "STATE_CONFLICT",
-                    "message": "Конфликт сохранения данных",
-                    "details": [],
-                }
-            },
+        logging.getLogger("cqa.data").warning(
+            "event=data_write_conflict error=STATE_CONFLICT"
+        )
+        return respond(
+            409, "STATE_CONFLICT", "Конфликт сохранения данных", request=request
         )
 
     @app.exception_handler(OperationalError)
     async def database_error(request, exc):
-        return JSONResponse(
-            status_code=503,
-            content={
-                "error": {
-                    "code": "DATABASE_UNAVAILABLE",
-                    "message": "База данных временно недоступна",
-                    "details": [],
-                }
-            },
+        log_internal_error("DATABASE_UNAVAILABLE", exc)
+        return respond(
+            503,
+            "DATABASE_UNAVAILABLE",
+            "База данных временно недоступна",
+            request=request,
         )

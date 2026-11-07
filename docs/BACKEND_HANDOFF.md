@@ -11,22 +11,32 @@
 from app.api.install import install_data_api
 from app.db.migrate import migrate
 from app.db.session import make_engine, session_factory
+from app.main import error_response
 from app.services.seed import seed
 
 # Каталог БД должен существовать. URL и подписанная ссылка приходят из config.
-migrate(settings.database_url)
-engine = make_engine(settings.database_url)
+database_url = settings.sqlalchemy_url.render_as_string(hide_password=False)
+migrate(database_url)
+engine = make_engine(database_url)
 sessions = session_factory(engine)
 with sessions.begin() as session:
     seed(session)
-install_data_api(app, sessions, dataset_url=settings.dataset_api_url)
+install_data_api(
+    app, sessions,
+    dataset_url=settings.dataset_api_url.get_secret_value(),
+    error_response=error_response,
+)
 ```
 
-Имена полей `settings` здесь иллюстративные: интегратор сопоставляет их со своим
-config. Миграцию/seed выполнить перед приёмом запросов, engine.dispose() — при
-остановке. `/health` реализует интегратор, проверяя реальное подключение к БД.
-`install_data_api` устанавливает обработчики ошибок в согласованном формате;
-при интеграции объединить их с общими обработчиками A-01.
+Пример согласован с текущим A-01 (`origin/main` ea6ff60): относительный путь
+разрешается настройками от корня репозитория, подписанный URL извлекается из
+SecretStr только на сервере. Не выводите URL в журнал. Миграцию/seed выполнить
+перед приёмом запросов, engine.dispose() — при остановке. `/health` уже реализован
+интегратором. `install_data_api` переиспользует переданный `app.main.error_response`,
+включая код в HTTP-сводке; диагностика автоматически использует
+`app.diagnostics.log_internal_error`, если каркас присутствует. Без A-01 остаются
+безопасные локальные обработчики без текста исключений. Конфигурацию журналов
+устанавливает каркас, а не модули данных.
 
 Миграция запускается отдельно из корня репозитория:
 
@@ -53,7 +63,7 @@ HTTPX/httpcore logging отключён до уровня CRITICAL: INFO/DEBUG �
 
 ## Проверка
 
-Пока manifest отсутствует в main, временное окружение можно создать вне Git:
+Пока manifest отсутствует в этой ветке, временное окружение можно создать вне Git:
 
 ```bash
 python -m venv /tmp/cqa-venv
@@ -82,3 +92,52 @@ manifest не перенесён. Итоговый lock и общую CI под�
 Общий API-контракт не менялся. Для полей метаданных чек-листа выбраны
 `current_version_number`, `current_version_id`, `versions`, `current_version`;
 A-02 должен закрепить эти имена в общих контрактных примерах и клиенте.
+
+## Результат ревью C-06
+
+Проверен коммит `b396f43` из GitHub PR №3. Сессия маршрута теперь использует
+`Depends(..., scope="function")`: сбой commit возвращает безопасный 503 до ответа
+и откатывает запись. Неизвестное имя поля исключается из ошибки валидации, так
+как само может содержать приватный текст; индекс записи и родительский путь
+сохраняются. Общая проверка URL отклоняет неверный порт, пробелы, управляющие
+символы и credentials; dataset URL не допускает fragment. Корректные подписанные
+URL сохраняются без нормализации. CLI миграций возвращает ненулевой код и
+безопасную диагностику вместо traceback. Убраны повторная сборка ошибок,
+избыточное перехватывание `ValidationError` (это `ValueError`) и лишний подсчёт
+сообщений при чтении карточки.
+
+Журналы и воспроизводимые сценарии:
+
+- `cqa.import`: `dataset_fetch_started`, `dataset_fetch_rejected` (WARNING,
+  `DATASET_UNAVAILABLE` для неверной конфигурации), `dataset_fetch_failed`
+  (ERROR, `DATASET_ERROR` для upstream 500/повреждённого ответа),
+  `dataset_import_completed` (INFO, только счётчики после commit).
+- `cqa.checklists`: `checklist_version_saved` (INFO после commit),
+  `checklist_version_conflict` (WARNING, `VERSION_CONFLICT` при повторном сохранении).
+- `cqa.data`: `data_write_conflict` (WARNING, `STATE_CONFLICT`).
+- `cqa.errors`: `DATABASE_UNAVAILABLE` (ERROR при синтетическом сбое commit),
+  `MIGRATION_FAILED`/`MIGRATION_INVALID_ARGUMENTS` (ERROR для CLI).
+  `cqa.db`: `database_migration_completed` (INFO).
+
+Тест commit проверяет загрузку JSON, dataset-импорт, создание чек-листа и новой
+версии: rollback, сохранность истории, отсутствие успешного события и приватных
+маркеров в ответе/`caplog`. Фактически выполнены (Python 3.13, зависимости
+окружения интегратора; `-S` исключает его editable-привязку к другой рабочей копии):
+
+```bash
+CQA_REVIEW_PYTHON=/home/abilkhayr/Work/Dataton/backend/.venv/bin/python
+CQA_REVIEW_SITE=/home/abilkhayr/Work/Dataton/backend/.venv/lib/python3.13/site-packages
+PYTHONPATH="backend:$CQA_REVIEW_SITE" "$CQA_REVIEW_PYTHON" -S -m pytest backend/tests -q -W error
+/home/abilkhayr/Work/Dataton/backend/.venv/bin/ruff check backend --select E,F,I,UP,B --ignore E501
+/home/abilkhayr/Work/Dataton/backend/.venv/bin/ruff format backend --check
+git diff --check
+```
+
+В ветке: **37 passed, 1 skipped** (интеграционный модуль пропущен без A-01).
+Во временной копии `git archive origin/main` (`ea6ff60`) с наложенными каталогами
+`backend/app`, `backend/tests`, `backend/alembic` этой ветки та же команда pytest
+дала **129 passed**. `test_data_core_integration.py` подключает API к настоящему
+`create_app`: проверяет общий `error_response`, одну HTTP-сводку/одну диагностику
+при сбое commit, уровни/коды и отсутствие приватных данных. Ruff check/format и
+`git diff --check` прошли. Ветки не объединялись; автоматическое подключение API
+в `main.py`, worker/AI и апелляции остаются за пределами этого ревью.

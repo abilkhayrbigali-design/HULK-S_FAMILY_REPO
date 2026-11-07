@@ -3,7 +3,7 @@ import json
 
 from app.models.data import Conversation, Message, TranscriptVersion
 from app.services.errors import require
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 
 
 def import_records(session, payload, source="upload", group_id="UPLOAD"):
@@ -72,18 +72,24 @@ def import_records(session, payload, source="upload", group_id="UPLOAD"):
         row.current_transcript_version_id = version.id
         summary["conversation_ids"].append(row.id)
     session.flush()
+    session.info["cqa_import_summary"] = {
+        key: summary[key]
+        for key in ("received", "created", "new_versions", "unchanged")
+    }
     return summary
 
 
 def summary(session, row):
     version = session.get(TranscriptVersion, row.current_transcript_version_id)
-    from sqlalchemy import func
-
     count = session.scalar(
         select(func.count())
         .select_from(Message)
         .where(Message.transcript_version_id == version.id)
     )
+    return _summary(row, version, count)
+
+
+def _summary(row, version, message_count):
     return dict(
         id=row.id,
         external_id=row.external_id,
@@ -91,8 +97,8 @@ def summary(session, row):
         group_id=row.group_id,
         language=version.language,
         channel=version.channel,
-        current_transcript_version_id=version.id,
-        message_count=count,
+        current_transcript_version_id=row.current_transcript_version_id,
+        message_count=message_count,
         latest_evaluation=None,
     )
 
@@ -113,11 +119,8 @@ def detail(session, conversation_id, transcript_version_id=None):
         .where(Message.transcript_version_id == version.id)
         .order_by(Message.position)
     ).all()
-    result = summary(session, row)
+    result = _summary(row, version, len(messages))
     result.update(
-        language=version.language,
-        channel=version.channel,
-        message_count=len(messages),
         transcript_version_id=version.id,
         audio_url=version.audio_url,
         messages=[

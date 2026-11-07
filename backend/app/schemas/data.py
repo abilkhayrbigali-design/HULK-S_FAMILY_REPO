@@ -2,6 +2,7 @@
 
 from typing import Annotated, Literal
 
+from app.schemas.urls import valid_http_url
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -98,17 +99,8 @@ class OrganizerRecord(Schema):
     def validate_audio(self):
         if self.channel == "agent chat" and self.audio_url is not None:
             raise ValueError("Chat audio_url must be null")
-        if self.audio_url is not None:
-            from urllib.parse import urlsplit
-
-            url = urlsplit(self.audio_url)
-            if (
-                url.scheme not in ("http", "https")
-                or not url.hostname
-                or url.username
-                or url.password
-            ):
-                raise ValueError("Invalid audio URL")
+        if self.audio_url is not None and not valid_http_url(self.audio_url):
+            raise ValueError("Invalid audio URL")
         return self
 
 

@@ -1,20 +1,18 @@
+import logging
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
 from app.schemas.data import ImportRequest
+from app.schemas.urls import valid_http_url
 from app.services.errors import ServiceError
-from pydantic import ValidationError
+
+logger = logging.getLogger("cqa.import")
 
 
 def dataset_url(configured_url, group_id):
-    parts = urlsplit(configured_url)
-    if (
-        parts.scheme != "https"
-        or not parts.hostname
-        or parts.username
-        or parts.password
-    ):
+    if not valid_http_url(configured_url, https_only=True, allow_fragment=False):
         raise ServiceError(503, "DATASET_UNAVAILABLE", "Источник данных не настроен")
+    parts = urlsplit(configured_url)
     # Preserve the raw encoding of signed query parameters; replace only group_id.
     query = [
         part
@@ -26,8 +24,7 @@ def dataset_url(configured_url, group_id):
 
 
 def fetch_records(configured_url, group_id, transport=None):
-    if not configured_url:
-        raise ServiceError(503, "DATASET_UNAVAILABLE", "Источник данных не настроен")
+    logger.info("event=dataset_fetch_started")
     try:
         url = dataset_url(configured_url, group_id)
         # Disable httpx/httpcore request loggers at application integration: URLs are signed.
@@ -53,8 +50,15 @@ def fetch_records(configured_url, group_id, transport=None):
             raise ValueError("invalid dataset metadata")
         return payload
     except ServiceError:
+        logger.warning("event=dataset_fetch_rejected error=DATASET_UNAVAILABLE")
         raise
-    except (httpx.HTTPError, ValueError, KeyError, TypeError, ValidationError):
+    except httpx.InvalidURL:
+        logger.warning("event=dataset_fetch_rejected error=DATASET_UNAVAILABLE")
+        raise ServiceError(
+            503, "DATASET_UNAVAILABLE", "Источник данных не настроен"
+        ) from None
+    except (httpx.HTTPError, ValueError, KeyError, TypeError):
+        logger.error("event=dataset_fetch_failed error=DATASET_ERROR")
         raise ServiceError(
             502, "DATASET_ERROR", "Не удалось получить корректный набор диалогов"
         ) from None

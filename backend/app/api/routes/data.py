@@ -22,7 +22,7 @@ def session(request: Request):
             yield db
 
 
-DB = Annotated[object, Depends(session)]
+DB = Annotated[object, Depends(session, scope="function")]
 Limit = Annotated[int, Query(ge=1, le=100)]
 Offset = Annotated[int, Query(ge=0)]
 

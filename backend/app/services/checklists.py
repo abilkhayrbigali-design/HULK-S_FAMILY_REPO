@@ -1,3 +1,5 @@
+import logging
+
 from app.models.data import Checklist, ChecklistVersion
 from app.services.errors import ServiceError, require
 from sqlalchemy import select, update
@@ -31,6 +33,9 @@ def create(session, payload, *, seed_key=None):
     session.flush()
     checklist.current_version_id = version.id
     session.flush()
+    session.info["cqa_checklist_versions"] = (
+        session.info.get("cqa_checklist_versions", 0) + 1
+    )
     return snapshot(version)
 
 
@@ -46,6 +51,9 @@ def add_version(session, checklist_id, payload):
     )
     if changed.rowcount != 1:
         require(session.get(Checklist, checklist_id))
+        logging.getLogger("cqa.checklists").warning(
+            "event=checklist_version_conflict error=VERSION_CONFLICT"
+        )
         raise ServiceError(409, "VERSION_CONFLICT", "Чек-лист уже изменён")
     checklist = session.get(Checklist, checklist_id)
     version = ChecklistVersion(
@@ -58,6 +66,9 @@ def add_version(session, checklist_id, payload):
     session.flush()
     checklist.current_version_id = version.id
     session.flush()
+    session.info["cqa_checklist_versions"] = (
+        session.info.get("cqa_checklist_versions", 0) + 1
+    )
     return snapshot(version)
 
 
