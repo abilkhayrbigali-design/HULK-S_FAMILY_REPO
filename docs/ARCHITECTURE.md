@@ -40,7 +40,7 @@ flowchart LR
 
 ## 3. Стек и структура проекта
 
-Целевая структура. В A-01 уже созданы `backend/pyproject.toml`, lock, `app/main.py`, `app/config.py`, стартовые тесты и инфраструктура; остальные модули добавляются владельцами C/N/R:
+Предлагаемый каркас, который создаётся задачей A-01; перечисленные файлы приложения пока не существуют:
 
 ```text
 backend/
@@ -81,9 +81,7 @@ compose.yaml
 .env.example
 ```
 
-Дополнительно созданы `contracts/` и `tools/export_contracts.py` для общих схем/экспортов, синтетические примеры в `data/fixtures/synthetic/`, `compose.api.yaml` для одного backend и `.github/workflows/ci.yml`. Целевой `compose.yaml` с клиентом и worker ещё не существует. Границы подключения описаны в [INTEGRATION.md](INTEGRATION.md).
-
-React/TypeScript/Vite планируется для интерфейса; FastAPI/Pydantic — для сервера и проверки данных; SQLAlchemy/Alembic — для хранения и миграций. Серверные зависимости зафиксированы в `backend/uv.lock`. `create_app(settings)` создаёт engine в lifespan и освобождает его после остановки; `app.state.settings`/`app.state.engine` предназначены для подключения C-модулей. Сейчас таблиц, worker и бизнес-маршрутов нет.
+React/TypeScript/Vite используется для интерфейса; FastAPI/Pydantic — для сервера и проверки данных; SQLAlchemy/Alembic — для хранения и миграций. Конкретные версии зависимостей фиксируются lock-файлами при создании каркаса.
 
 ## 4. Обработка данных
 
