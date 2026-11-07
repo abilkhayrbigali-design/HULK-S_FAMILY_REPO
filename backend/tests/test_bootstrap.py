@@ -204,6 +204,7 @@ def test_errors_after_response_start_do_not_expose_private_exceptions(
         return StreamingResponse(body())
 
     with TestClient(app) as client, caplog.at_level(logging.INFO, logger="cqa.requests"):
+        caplog.clear()
         with pytest.raises(RuntimeError) as error:
             client.get(f"/test/{failure_phase}-failure")
     rendered = "".join(traceback.format_exception(error.value)) + caplog.text
@@ -212,6 +213,25 @@ def test_errors_after_response_start_do_not_expose_private_exceptions(
     records = [record for record in caplog.records if record.name.startswith("cqa.")]
     assert {record.name for record in records} == {"cqa.requests", "cqa.errors"}
     assert all(record.levelno == logging.ERROR for record in records)
+
+
+def test_startup_migration_failure_is_safe_and_disposes_engine(settings, caplog):
+    from app import main
+
+    engine = main.build_engine(settings)
+    with (
+        patch("app.main.build_engine", return_value=engine),
+        patch.object(engine, "dispose", wraps=engine.dispose) as disposed,
+        patch("app.main.migrate", side_effect=RuntimeError("synthetic-private-migration")),
+        pytest.raises(RuntimeError, match="^DATA_STARTUP_FAILED$") as failure,
+        TestClient(create_app(settings)),
+    ):
+        pytest.fail("Startup failure must prevent accepting requests")
+    assert failure.value.__suppress_context__ is True
+    disposed.assert_called_once()
+    assert "synthetic-private-migration" not in caplog.text
+    assert [r.name for r in caplog.records] == ["cqa.errors"]
+    assert "DATA_STARTUP_FAILED" in caplog.text
 
 
 def test_method_not_allowed_preserves_allow_header_and_safe_body(settings):

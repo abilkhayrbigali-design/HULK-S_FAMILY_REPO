@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from jsonschema import Draft202012Validator, FormatChecker
 from openapi_spec_validator import validate
 
+from app.config import Settings
 from app.main import create_app
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -108,10 +109,136 @@ def test_synthetic_history_and_message_references_are_consistent():
             assert set(ids) <= message_ids
 
 
-def test_runtime_health_and_error_responses_match_target_contract(settings):
+def test_runtime_paths_and_response_schemas_match_target_contract(settings):
     with TestClient(create_app(settings)) as client:
         validator("Health").validate(client.get("/health").json())
         validator("Error").validate(client.get("/unknown").json())
         runtime = client.get("/openapi.json").json()
-    assert set(runtime["paths"]) == {"/health"}
-    assert "post" in CONTRACT["paths"]["/api/v1/evaluations"]
+    validate(runtime)
+    assert set(runtime["paths"]) == set(CONTRACT["paths"])
+    for path, operations in CONTRACT["paths"].items():
+        assert runtime["paths"][path].keys() == operations.keys()
+        for method, target in operations.items():
+            operation = runtime["paths"][path][method]
+            assert operation["operationId"] == target["operationId"]
+            for status, response in target["responses"].items():
+                target_ref = response["content"]["application/json"]["schema"]["$ref"]
+                actual_ref = operation["responses"][status]["content"]["application/json"][
+                    "schema"
+                ]["$ref"]
+                assert actual_ref == target_ref.replace("/schemas/", "/schemas/Wire")
+    request_body = runtime["paths"]["/api/v1/checklists"]["post"]["requestBody"]
+    assert (
+        request_body["content"]["application/json"]["schema"]["$ref"]
+        == "#/components/schemas/ChecklistCreate"
+    )
+    assert set(runtime["components"]["schemas"]["ChecklistCreate"]["required"]) == {
+        "name",
+        "criteria",
+    }
+
+
+def test_production_factory_wire_smoke_and_persistence(tmp_path, caplog):
+    path = tmp_path / "integration.sqlite3"
+    settings = Settings(_env_file=None, CQA_DATABASE_URL=f"sqlite:///{path}")
+    marker = "SYNTHETIC_PRIVATE_INTEGRATION"
+    payload = fixture("import.request.json")
+    payload["records"][0]["transcript"][0]["text"] = marker
+    payload["records"][0]["transcript"][0]["timestamp"] = ""
+    payload["records"][0]["transcript"][1]["text"] = " "
+    del payload["records"][0]["audio_url"]
+    validator("ConversationImportRequest").validate(payload)
+    origin = {"Origin": "http://localhost:5173"}
+
+    def verify(response, method, route, status):
+        assert response.status_code == status
+        declared = runtime["paths"][route][method]["responses"][str(status)]
+        schema = declared["content"]["application/json"]["schema"]
+        Draft202012Validator(
+            {**schema, "components": runtime["components"]}, format_checker=FormatChecker()
+        ).validate(response.json())
+        return response.json()
+
+    with TestClient(create_app(settings)) as client:
+        runtime = client.get("/openapi.json").json()
+        imported = verify(
+            client.post("/api/v1/conversations/import", json=payload),
+            "post",
+            "/api/v1/conversations/import",
+            200,
+        )
+        conversation_id = imported["conversation_ids"][0]
+        listed = verify(client.get("/api/v1/conversations"), "get", "/api/v1/conversations", 200)
+        assert listed["total"] == len(payload["records"])
+        detail_url = f"/api/v1/conversations/{conversation_id}"
+        detail = verify(client.get(detail_url), "get", "/api/v1/conversations/{id}", 200)
+        assert detail["messages"][0]["text"] == marker
+        assert detail["messages"][0]["timestamp"] == ""
+        assert detail["messages"][1]["text"] == " "
+        assert detail["audio_url"] is None
+        assert detail["latest_evaluation"] is None
+
+        seed_list = verify(client.get("/api/v1/checklists"), "get", "/api/v1/checklists", 200)
+        assert len(seed_list["items"]) == 1
+        create_payload = fixture("checklist.initial.json")
+        initial = create_payload["criteria"][0]
+        for field in ("allow_na", "scale", "na_rule"):
+            del initial[field]
+        initial["section"] = ""
+        validator("ChecklistCreate").validate(create_payload)
+        original = verify(
+            client.post("/api/v1/checklists", json=create_payload),
+            "post",
+            "/api/v1/checklists",
+            201,
+        )
+        assert original["criteria"][0] == dict(initial, allow_na=False, scale=None, na_rule=None)
+        url = f"/api/v1/checklists/{original['checklist_id']}"
+        criteria = deepcopy(original["criteria"])
+        criteria[0]["weight"] += 1
+        new_payload = {"criteria": criteria, "expected_version_number": 1}
+        newer = verify(
+            client.post(f"{url}/versions", json=new_payload),
+            "post",
+            "/api/v1/checklists/{id}/versions",
+            201,
+        )
+        verify(
+            client.post(f"{url}/versions", json=new_payload),
+            "post",
+            "/api/v1/checklists/{id}/versions",
+            409,
+        )
+        error_response = client.post(
+            "/api/v1/evaluations",
+            json={"conversation_id": conversation_id, "checklist_version_id": newer["id"]},
+            headers=origin,
+        )
+        error = verify(error_response, "post", "/api/v1/evaluations", 503)
+        assert error["error"]["code"] == "AI_NOT_CONFIGURED"
+        assert error_response.headers["access-control-allow-origin"] == origin["Origin"]
+        assert (
+            verify(client.get("/api/v1/evaluations"), "get", "/api/v1/evaluations", 200)["items"]
+            == []
+        )
+        assert verify(client.get("/api/v1/appeals"), "get", "/api/v1/appeals", 200)["items"] == []
+
+    with TestClient(create_app(settings)) as client:
+        assert client.get(detail_url).json() == detail
+        checklist = verify(client.get(url), "get", "/api/v1/checklists/{id}", 200)
+        assert checklist["current_version"] == newer
+        assert checklist["versions"] == [original, newer]
+        version = verify(
+            client.get(f"/api/v1/checklist-versions/{original['id']}"),
+            "get",
+            "/api/v1/checklist-versions/{id}",
+            200,
+        )
+        assert version == original
+        listing = verify(client.get("/api/v1/checklists"), "get", "/api/v1/checklists", 200)
+        assert listing["total"] == 2
+        summary = next(item for item in listing["items"] if item["id"] == original["checklist_id"])
+        assert summary["latest_version_id"] == newer["id"]
+        assert summary["latest_version_number"] == 2
+    assert marker not in caplog.text
+    assert "error=AI_NOT_CONFIGURED" in caplog.text

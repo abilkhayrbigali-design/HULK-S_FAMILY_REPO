@@ -1,4 +1,4 @@
-"""Application factory and resource lifecycle; business routes are added by C-01/C-02."""
+"""Application factory and resource lifecycle for the CQA API."""
 
 import logging
 from collections.abc import AsyncIterator
@@ -8,7 +8,6 @@ from time import perf_counter
 from typing import Literal
 
 from fastapi import FastAPI, Request
-from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -18,8 +17,14 @@ from sqlalchemy.pool import StaticPool
 from starlette.exceptions import HTTPException
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from app.api.install import install_data_api
+from app.api.openapi import document_wire_responses
 from app.config import ConfigurationUnavailable, Settings
+from app.db.migrate import migrate
+from app.db.session import session_factory
 from app.diagnostics import log_internal_error
+from app.services.evaluation_worker import EvaluationProvider, evaluation_worker
+from app.services.seed import seed
 
 logger = logging.getLogger("cqa.requests")
 ERROR_CODE_STATE_KEY = "_cqa_error_code"
@@ -119,7 +124,7 @@ class SafeErrorMiddleware:
 
 
 def build_engine(settings: Settings) -> Engine:
-    """C-01 reuses app.state.engine; no tables or seed are created here."""
+    """One engine shared by migrations, requests and the worker."""
     url = settings.sqlalchemy_url
     if url.database != ":memory:":
         Path(url.database or "").parent.mkdir(parents=True, exist_ok=True)
@@ -139,39 +144,62 @@ def build_engine(settings: Settings) -> Engine:
     return engine
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None,
+    *,
+    provider: EvaluationProvider | None = None,
+    prompt_version: str = "unconfigured",
+) -> FastAPI:
     configured = settings if settings is not None else Settings()
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
-        application.state.engine = build_engine(configured)
+        engine = None
         try:
-            yield
+            try:
+                engine = build_engine(configured)
+                application.state.engine = engine
+                migrate(engine=engine)
+                sessions = session_factory(engine)
+                application.state.session_factory = sessions
+                with sessions.begin() as db:
+                    seed(db)
+            except Exception as exc:
+                log_internal_error("DATA_STARTUP_FAILED", exc)
+                raise RuntimeError("DATA_STARTUP_FAILED") from None
+
+            if configured.sqlalchemy_url.database == ":memory:":
+                # A shared in-memory connection cannot support concurrent worker transactions.
+                yield
+            else:
+                async with evaluation_worker(
+                    application,
+                    sessions,
+                    provider,
+                    concurrency=configured.evaluation_concurrency,
+                    prompt_version=prompt_version,
+                ):
+                    yield
         finally:
-            application.state.engine.dispose()
+            if engine is not None:
+                engine.dispose()
 
     application = FastAPI(title="CQA API", version="0.1.0", lifespan=lifespan)
     application.state.settings = configured
     logging.basicConfig(level=configured.log_level, format="%(levelname)s %(name)s %(message)s")
     logging.getLogger("cqa").setLevel(configured.log_level)
-    # Network libraries must not emit signed upstream URLs or request payloads at DEBUG/INFO.
-    logging.getLogger("httpx").setLevel(logging.WARNING)
-    logging.getLogger("httpx2").setLevel(logging.WARNING)
-    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    install_data_api(
+        application,
+        dataset_url=configured.dataset_api_url.get_secret_value(),
+        error_response=error_response,
+    )
+    document_wire_responses(application)
 
     application.add_middleware(SafeErrorMiddleware)
 
     @application.exception_handler(ConfigurationUnavailable)
     async def configuration_error(request: Request, exc: ConfigurationUnavailable):
         return error_response(503, exc.code, exc.message, request=request)
-
-    @application.exception_handler(RequestValidationError)
-    async def validation_error(request: Request, exc: RequestValidationError):
-        # Pydantic's input/msg/ctx may include private text or secrets. Keep only location and code.
-        details = [{"loc": list(item["loc"]), "type": item["type"]} for item in exc.errors()]
-        return error_response(
-            422, "VALIDATION_ERROR", "Request validation failed.", details, request=request
-        )
 
     @application.exception_handler(HTTPException)
     async def http_error(request: Request, exc: HTTPException):

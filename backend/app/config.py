@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     dataset_api_url: SecretStr = Field(default=SecretStr(""), alias="CQA_DATASET_API_URL")
     default_group_id: str = Field(default="DEV", alias="CQA_DEFAULT_GROUP_ID", min_length=1)
     openai_api_key: SecretStr = Field(default=SecretStr(""), alias="OPENAI_API_KEY")
-    openai_model: str = Field(default="gpt-6-astra", alias="OPENAI_MODEL", min_length=1)
+    openai_model: str = Field(default="gpt-6-luna", alias="OPENAI_MODEL", min_length=1)
     llm_timeout_seconds: float = Field(default=90, alias="CQA_LLM_TIMEOUT_SECONDS", gt=0, le=600)
     llm_max_retries: int = Field(default=2, alias="CQA_LLM_MAX_RETRIES", ge=0, le=5)
     evaluation_concurrency: int = Field(default=2, alias="CQA_EVALUATION_CONCURRENCY", ge=1, le=8)

@@ -4,6 +4,7 @@ import json
 from sqlalchemy import func, select, text
 
 from app.models.data import Conversation, Message, TranscriptVersion
+from app.models.evaluations import Evaluation
 from app.services.errors import require
 
 
@@ -82,10 +83,16 @@ def summary(session, row):
     count = session.scalar(
         select(func.count()).select_from(Message).where(Message.transcript_version_id == version.id)
     )
-    return _summary(row, version, count)
+    return _summary(session, row, version, count)
 
 
-def _summary(row, version, message_count):
+def _summary(session, row, version, message_count):
+    latest = session.scalar(
+        select(Evaluation)
+        .where(Evaluation.conversation_id == row.id)
+        .order_by(Evaluation.created_at.desc(), Evaluation.id.desc())
+        .limit(1)
+    )
     return dict(
         id=row.id,
         external_id=row.external_id,
@@ -95,7 +102,35 @@ def _summary(row, version, message_count):
         channel=version.channel,
         current_transcript_version_id=row.current_transcript_version_id,
         message_count=message_count,
-        latest_evaluation=None,
+        latest_evaluation=(
+            dict(
+                id=latest.id,
+                status=latest.status,
+                created_at=latest.created_at,
+                original_total=latest.original["total"] if latest.original else None,
+                final_total=latest.final["total"] if latest.final else None,
+            )
+            if latest
+            else None
+        ),
+    )
+
+
+def transcript_snapshot(session, version):
+    messages = session.scalars(
+        select(Message)
+        .where(Message.transcript_version_id == version.id)
+        .order_by(Message.position)
+    ).all()
+    return dict(
+        id=version.id,
+        conversation_id=version.conversation_id,
+        language=version.language,
+        channel=version.channel,
+        messages=[
+            {k: getattr(m, k) for k in ("id", "position", "timestamp", "speaker", "text")}
+            for m in messages
+        ],
     )
 
 
@@ -110,18 +145,7 @@ def detail(session, conversation_id, transcript_version_id=None):
             )
         )
     )
-    messages = session.scalars(
-        select(Message)
-        .where(Message.transcript_version_id == version.id)
-        .order_by(Message.position)
-    ).all()
-    result = _summary(row, version, len(messages))
-    result.update(
-        transcript_version_id=version.id,
-        audio_url=version.audio_url,
-        messages=[
-            {k: getattr(m, k) for k in ("id", "position", "timestamp", "speaker", "text")}
-            for m in messages
-        ],
-    )
+    messages = transcript_snapshot(session, version)["messages"]
+    result = _summary(session, row, version, len(messages))
+    result.update(transcript_version_id=version.id, audio_url=version.audio_url, messages=messages)
     return result
