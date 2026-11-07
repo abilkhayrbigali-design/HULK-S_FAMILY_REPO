@@ -42,6 +42,7 @@ async function syntheticApi(
   state: {
     run?: Evaluation;
     startError?: "network" | "503";
+    deferStart?: boolean;
     newerTranscript?: boolean;
     decide?: (route: Route, input: DecisionInput) => Promise<void>;
     appeals?: Appeal[];
@@ -105,6 +106,7 @@ async function syntheticApi(
       posts.push(request.postDataJSON());
       if (state.startError === "503")
         return route.fulfill({ status: 503, json: error("AI_NOT_CONFIGURED") });
+      if (state.deferStart) return route.abort("failed");
       state.run = evaluationSchema.parse(fixture("evaluation.queued.json"));
       if (state.startError === "network") return route.abort("failed");
       return route.fulfill({ status: 202, json: state.run });
@@ -261,6 +263,53 @@ test("polling stops when the user leaves a pending evaluation", async ({
   expect(api.polls()).toBe(reads);
 });
 
+test("an empty check after a lost POST does not unlock a delayed launch", async ({
+  page,
+}) => {
+  const state: Parameters<typeof syntheticApi>[1] = { deferStart: true };
+  const api = await syntheticApi(page, state);
+  await page.goto(url);
+  await selectChecklist(page);
+  const start = page.getByRole("button", { name: "Запустить оценку" });
+  const check = page.getByRole("button", {
+    name: "Проверить последний запуск",
+  });
+  await start.click();
+  await check.click();
+  await expect(
+    page.getByText("Запусков пока нет.", { exact: false }),
+  ).toBeVisible();
+  await expect(start).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Разрешить новый запуск" }),
+  ).toBeVisible();
+  state.run = evaluationSchema.parse(fixture("evaluation.queued.json"));
+  await check.click();
+  await expect(page.getByText("В очереди", { exact: true })).toBeVisible();
+  await expect(check).toHaveCount(0);
+  expect(api.posts).toHaveLength(1);
+});
+
+test("server fractions are formatted and long section names fit the mobile result", async ({
+  page,
+}) => {
+  const item = fixture("evaluation.completed.json");
+  const longName = "Д".repeat(120);
+  item.original.sections[0].name = longName;
+  item.original.criteria[0].effective_points = 100 / 3;
+  item.original.criteria[0].effective_weight = 100 / 3;
+  await syntheticApi(page, { run: evaluationSchema.parse(item) });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(url);
+  await expect(
+    page.getByText("Вклад: 33,33 · Вес: 33,33", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText(longName, { exact: true })).toBeVisible();
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth),
+  ).toBeLessThanOrEqual(390);
+});
+
 for (const condition of ["failed", "503", "network"] as const) {
   test(`evaluation failure is shown safely: ${condition}`, async ({ page }) => {
     const logs: string[] = [];
@@ -371,16 +420,27 @@ test("appeal override: stale revision preserves the draft and requires explicit 
   expect(api.decisions).toHaveLength(0);
   await page.getByLabel("Конец диапазона 1").selectOption("m0004");
   state.run = { ...completed, revision: 1 };
-  state.appeals = state.appeals?.map((appeal) => ({
-    ...appeal,
-    current_revision: 1,
-  }));
   await save.click();
-  await expect(page.getByRole("alert")).toContainText("Конфликт ревизии");
+  await expect(
+    page.getByText("Конфликт ревизии.", { exact: false }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Оценка изменилась во время проверки.", { exact: false }),
+  ).toBeVisible();
   await expect(reason).toHaveValue("Синтетическая причина пересмотра");
   await expect(page.getByLabel("Новый ответ")).toHaveValue("10");
   await expect(save).toBeDisabled();
   expect(api.decisions.map((item) => item.expected_revision)).toEqual([0]);
+  await expect(
+    page.getByRole("button", { name: "Продолжить с ревизией 1" }),
+  ).toHaveCount(0);
+  state.appeals = state.appeals?.map((appeal) => ({
+    ...appeal,
+    current_revision: 1,
+  }));
+  await page
+    .getByRole("button", { name: "Загрузить актуальное состояние" })
+    .click();
   await page.getByRole("button", { name: "Продолжить с ревизией 1" }).click();
   await save.click();
   await expect(page.getByText("Решение сохранено.")).toBeVisible();

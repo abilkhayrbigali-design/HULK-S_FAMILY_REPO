@@ -711,6 +711,14 @@ td small {
   justify-content: space-between;
   gap: 10px;
 }
+.section-scores dt {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.section-scores dd {
+  margin: 0;
+  text-align: right;
+}
 .criterion-result {
   border-top: 1px solid #dce2d6;
   margin-top: 14px;

@@ -174,10 +174,15 @@ export function DecisionForm({
       if (
         currentAppeal.id !== appeal.id ||
         currentAppeal.evaluation_id !== evaluation.id ||
-        evaluation.id !== appeal.evaluation_id
+        evaluation.id !== appeal.evaluation_id ||
+        evaluation.status !== "completed"
       ) {
         logEvent("load_failed", 0, "INVALID_RESPONSE");
         throw new ApiError("INVALID_RESPONSE");
+      }
+      if (currentAppeal.current_revision !== evaluation.revision) {
+        logEvent("load_failed", 409, "REVISION_SYNC_CONFLICT");
+        throw new ApiError("REVISION_SYNC_CONFLICT", 409);
       }
       return { appeal: currentAppeal, evaluation };
     });

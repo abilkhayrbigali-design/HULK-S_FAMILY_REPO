@@ -182,14 +182,9 @@ export function Appeals({
         >
           Отправить апелляцию
         </button>
-        {submission.error instanceof ApiError &&
-          (submission.error.status === 409 ? (
-            <p role="alert" className="notice error">
-              По этому критерию уже есть открытая апелляция. Проверьте историю.
-            </p>
-          ) : (
-            <ErrorNotice error={submission.error} />
-          ))}
+        {submission.error instanceof ApiError && (
+          <ErrorNotice error={submission.error} />
+        )}
       </form>
       {notice && (
         <p role="status" className="notice subtle">

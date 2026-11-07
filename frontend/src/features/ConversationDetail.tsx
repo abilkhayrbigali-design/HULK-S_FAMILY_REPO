@@ -27,6 +27,11 @@ const statuses = {
   completed: "Оценка завершена",
   failed: "Оценка не выполнена",
 };
+type UncertainStart = {
+  knownIds: string[];
+  checklistVersionId: string;
+  checked: boolean;
+};
 
 export function ConversationDetail() {
   const { id = "" } = useParams();
@@ -100,6 +105,7 @@ function ConversationWorkspace({ id }: { id: string }) {
     selectedChecklist?.versions.find((v) => v.id === selectedVersion) ??
     selectedChecklist?.current_version;
   const start = useMutation();
+  const [uncertainStart, setUncertainStart] = useState<UncertainStart>();
   const [highlight, setHighlight] = useState<{
     id: string;
     first: number;
@@ -119,9 +125,13 @@ function ConversationWorkspace({ id }: { id: string }) {
     : c;
   const currentHighlight = highlight?.id === run?.id ? highlight : undefined;
   const pending = !!evaluationId && (!run || isPending(run.status));
-  const uncertainStart =
-    start.error instanceof ApiError &&
-    ["NETWORK_ERROR", "TIMEOUT", "INVALID_RESPONSE"].includes(start.error.code);
+  const recoveredStart =
+    uncertainStart &&
+    run &&
+    run.id === c.latest_evaluation?.id &&
+    !uncertainStart.knownIds.includes(run.id) &&
+    run.checklist_version_id === uncertainStart.checklistVersionId;
+  const awaitingStart = !!uncertainStart && !recoveredStart;
   const pinnedVersion =
     resultVersion.data?.id === checklistVersionId
       ? resultVersion.data
@@ -135,15 +145,32 @@ function ConversationWorkspace({ id }: { id: string }) {
   }
 
   async function startEvaluation() {
-    if (!version || pending || uncertainStart) return;
+    if (!version || pending || awaitingStart) return;
+    const knownIds = [evaluationId, c.latest_evaluation?.id ?? ""];
     const result = await start.submit((signal) =>
       api.startEvaluation(c.id, version.id, signal),
     );
-    if (result?.ok) selectRun(result.data.id);
+    if (!result) return;
+    if (result.ok) {
+      setUncertainStart(undefined);
+      selectRun(result.data.id);
+    } else {
+      const error = result.error;
+      setUncertainStart(
+        error instanceof ApiError &&
+          (["NETWORK_ERROR", "TIMEOUT", "INVALID_RESPONSE"].includes(
+            error.code,
+          ) ||
+            error.status === 502 ||
+            error.status === 504)
+          ? { knownIds, checklistVersionId: version.id, checked: false }
+          : undefined,
+      );
+    }
   }
 
   function readLatest() {
-    start.clearError();
+    setUncertainStart((state) => state && { ...state, checked: true });
     selectRun();
     conversation.retry();
   }
@@ -326,22 +353,40 @@ function ConversationWorkspace({ id }: { id: string }) {
             <div className="evaluation-launch">
               <button
                 type="button"
-                disabled={!version || pending || start.busy || uncertainStart}
+                disabled={!version || pending || start.busy || awaitingStart}
                 onClick={() => void startEvaluation()}
               >
                 {start.busy ? "Запускаем…" : "Запустить оценку"}
               </button>
-              {start.error instanceof ApiError && (
+              {start.error instanceof ApiError && !recoveredStart && (
                 <ErrorNotice error={start.error} />
               )}
-              {uncertainStart && (
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={readLatest}
-                >
-                  Проверить последний запуск
-                </button>
+              {awaitingStart && (
+                <>
+                  <p className="muted">
+                    Сервер мог принять запрос. Новый запуск может создать вторую
+                    оценку.
+                  </p>
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={readLatest}
+                  >
+                    Проверить последний запуск
+                  </button>
+                  {uncertainStart?.checked && (
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => {
+                        setUncertainStart(undefined);
+                        start.clearError();
+                      }}
+                    >
+                      Разрешить новый запуск
+                    </button>
+                  )}
+                </>
               )}
               {run && (
                 <div>

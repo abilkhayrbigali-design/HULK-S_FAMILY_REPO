@@ -60,8 +60,12 @@ export function EvidenceLinks({
   );
 }
 
+const points = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 });
+
 function score(total: number | null) {
-  return total === null ? "Нет применимых весов" : `${total} / 100`;
+  return total === null
+    ? "Нет применимых весов"
+    : `${points.format(total)} / 100`;
 }
 
 export function CriterionAnswer({
@@ -149,7 +153,8 @@ function ScoredAnswer({
       <CriterionAnswer result={result} criterion={criterion} show={show} />
       {criterion?.type !== "flag" && (
         <p className="muted">
-          Вклад: {result.effective_points} · Вес: {result.effective_weight}
+          Вклад: {points.format(result.effective_points)} · Вес:{" "}
+          {points.format(result.effective_weight)}
         </p>
       )}
     </div>
