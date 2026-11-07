@@ -8,7 +8,6 @@ from copy import deepcopy
 from pathlib import Path
 
 import httpx
-import httpx2
 import pytest
 from jsonschema import Draft202012Validator
 
@@ -38,10 +37,12 @@ def snapshots():
 
 @pytest.fixture
 def provider_with(monkeypatch):
+    monkeypatch.delenv("OPENAI_CUSTOM_HEADERS", raising=False)
+
     @asynccontextmanager
     async def factory(handler, **overrides):
-        http_client = httpx2.AsyncClient(
-            transport=httpx2.MockTransport(handler), follow_redirects=False
+        http_client = httpx.AsyncClient(
+            transport=httpx.MockTransport(handler), follow_redirects=False
         )
 
         def transport(**options):
@@ -80,7 +81,7 @@ def response(*, result=None, text=None, refusal=False, status="completed", detai
     if details:
         usage["input_tokens_details"] = {"cached_tokens": 20, "cache_write_tokens": 0}
         usage["output_tokens_details"] = {"reasoning_tokens": 10}
-    return httpx2.Response(
+    return httpx.Response(
         200,
         json={
             "id": "resp_synthetic",
@@ -117,10 +118,14 @@ async def test_responses_request_and_provider_contract(
     def handle(request):
         assert request.url == "https://api.openai.com/v1/responses"
         assert request.headers["Authorization"] == f"Bearer {MARKER}"
+        for namespace in ("httpcore.http11", "httpcore2.http11"):
+            logging.getLogger(namespace).debug("receive_response_headers.complete %s", MARKER)
         calls.append(json.loads(request.content))
         return response()
 
     caplog.set_level(logging.DEBUG)
+    caplog.set_level(logging.DEBUG, logger="httpcore")
+    caplog.set_level(logging.DEBUG, logger="httpcore2")
     async with provider_with(handle) as (provider, settings):
         result = await provider.evaluate(transcript, checklist, adapter.PROMPT_VERSION)
     assert len(calls) == 1
@@ -196,7 +201,9 @@ async def test_paid_invalid_response_repair_counts_both_attempts(
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("status,code", [(429, "AI_RATE_LIMIT"), (503, "AI_UPSTREAM_ERROR")])
+@pytest.mark.parametrize(
+    "status,code", [(408, "AI_TIMEOUT"), (429, "AI_RATE_LIMIT"), (503, "AI_UPSTREAM_ERROR")]
+)
 async def test_transient_http_retry_limit_and_unknown_usage(
     provider_with, snapshots, status, code, caplog
 ):
@@ -205,7 +212,7 @@ async def test_transient_http_retry_limit_and_unknown_usage(
     def handle(_request):
         nonlocal calls
         calls += 1
-        return httpx2.Response(status, json={"error": {"message": MARKER}})
+        return httpx.Response(status, json={"error": {"message": MARKER}})
 
     async with provider_with(handle, CQA_LLM_MAX_RETRIES=1) as (provider, _):
         with pytest.raises(ProviderFailure, match="^AI_PROVIDER_ERROR$") as failure:
@@ -226,7 +233,7 @@ async def test_usage_is_unknown_after_unobserved_attempt_then_success(provider_w
         nonlocal calls
         calls += 1
         if calls == 1:
-            return httpx2.Response(503, headers={"Retry-After": "0"})
+            return httpx.Response(503, headers={"Retry-After": "0"})
         return response()
 
     async with provider_with(handle, CQA_LLM_MAX_RETRIES=1) as (provider, _):
@@ -247,6 +254,7 @@ async def test_usage_is_unknown_after_unobserved_attempt_then_success(provider_w
         ("quota", "AI_REQUEST_REJECTED"),
         ("redirect", "AI_REQUEST_REJECTED"),
         ("long_retry_after", "AI_RATE_LIMIT"),
+        ("no_retry", "AI_UPSTREAM_ERROR"),
     ],
 )
 async def test_terminal_failures_do_not_replay(
@@ -262,12 +270,14 @@ async def test_terminal_failures_do_not_replay(
         if response_kind == "incomplete":
             return response(status="incomplete")
         if response_kind == "quota":
-            return httpx2.Response(
+            return httpx.Response(
                 429, json={"error": {"message": MARKER, "code": "insufficient_quota"}}
             )
         if response_kind == "redirect":
-            return httpx2.Response(307, headers={"Location": f"https://example.invalid/{MARKER}"})
-        return httpx2.Response(
+            return httpx.Response(307, headers={"Location": f"https://example.invalid/{MARKER}"})
+        if response_kind == "no_retry":
+            return httpx.Response(503, headers={"x-should-retry": "false"})
+        return httpx.Response(
             429, headers={"Retry-After": "90"}, json={"error": {"message": MARKER}}
         )
 
@@ -293,7 +303,7 @@ async def test_attempt_timeout_and_explicit_model_override(
     async def handle(request):
         calls.append(json.loads(request.content))
         if timeout_kind == "sdk":
-            raise httpx2.ReadTimeout(MARKER)
+            raise httpx.ReadTimeout(MARKER)
         await asyncio.sleep(1)
         return response()
 
@@ -323,18 +333,35 @@ async def test_missing_key_and_unknown_prompt_never_make_requests(provider_with,
     async with provider_with(handle) as (provider, _):
         with pytest.raises(ProviderFailure) as failure:
             await provider.evaluate(*snapshots, "unknown")
-    assert failure.value.metadata.usage.request_count == 0
-    assert failure.value.metadata.usage.total_tokens is None
+    assert failure.value.metadata is None
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("invalid", [False, True])
-async def test_worker_uses_sdk_adapter_and_persists_usage(
-    provider_with, snapshots, tmp_path, invalid
-):
+async def test_ambient_sdk_headers_cannot_override_settings(monkeypatch, caplog):
+    monkeypatch.setenv("OPENAI_CUSTOM_HEADERS", f"authorization: Bearer {MARKER}")
+    settings = Settings(_env_file=None, OPENAI_API_KEY="synthetic-settings-key")
+    with pytest.raises(ConfigurationUnavailable) as conflict:
+        async with adapter.openai_provider(settings):
+            pytest.fail("Conflicting SDK configuration should prevent opening the client")
+    assert conflict.value.code == "AI_SDK_CONFIG_CONFLICT"
+    assert MARKER not in str(conflict.value) + caplog.text
+
+
+@pytest.mark.anyio
+async def test_blank_model_is_rejected_before_opening_client():
+    settings = Settings(_env_file=None, OPENAI_API_KEY=MARKER, OPENAI_MODEL="   ")
+    with pytest.raises(ConfigurationUnavailable) as missing:
+        async with adapter.openai_provider(settings):
+            pytest.fail("A blank model must be rejected")
+    assert missing.value.code == "AI_MODEL_NOT_CONFIGURED"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("case", ["valid", "invalid_evidence", "unknown_prompt"])
+async def test_worker_uses_sdk_adapter_and_persists_usage(provider_with, snapshots, tmp_path, case):
     transcript, checklist = snapshots
     rows = deepcopy(model_output())
-    if invalid:
+    if case == "invalid_evidence":
         rows["criterion_results"][0]["evidence"][0]["message_id"] = "m9999"
     calls = []
 
@@ -345,7 +372,8 @@ async def test_worker_uses_sdk_adapter_and_persists_usage(
     async with provider_with(
         handle, CQA_DATABASE_URL=f"sqlite:///{tmp_path}/cqa.sqlite3", CQA_LLM_MAX_RETRIES=0
     ) as (provider, settings):
-        app = create_app(settings, provider=provider, prompt_version=adapter.PROMPT_VERSION)
+        prompt_version = "unknown" if case == "unknown_prompt" else adapter.PROMPT_VERSION
+        app = create_app(settings, provider=provider, prompt_version=prompt_version)
         async with (
             app.router.lifespan_context(app),
             httpx.AsyncClient(
@@ -386,12 +414,16 @@ async def test_worker_uses_sdk_adapter_and_persists_usage(
             async with asyncio.timeout(8):
                 while (item := (await client.get(url)).json())["status"] in ("queued", "running"):
                     await asyncio.sleep(0.03)
-            assert item["status"] == ("failed" if invalid else "completed")
+            assert item["status"] == ("completed" if case == "valid" else "failed")
+            if case == "unknown_prompt":
+                assert calls == [] and item["provenance"] is None
+                assert item["original"] is None and item["error"]["code"] == "AI_PROVIDER_ERROR"
+                return
             assert item["provenance"]["usage"]["request_count"] == len(calls) == 1
             assert item["provenance"]["usage"]["total_tokens"] == 130
             assert item["provenance"]["estimated_cost_usd"] is None
             assert item["provenance"]["prompt_version"] == adapter.PROMPT_VERSION
-            if invalid:
+            if case == "invalid_evidence":
                 assert item["original"] is None and item["error"]["code"] == "AI_PROVIDER_ERROR"
             else:
                 assert item["original"]["total"] == 70

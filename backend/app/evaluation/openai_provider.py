@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from math import isfinite
+from os import environ
 from time import perf_counter
 from typing import Annotated, Never
 
@@ -22,7 +23,7 @@ from openai import (
 from openai.types.responses import Response
 from pydantic import Field, ValidationError
 
-from app.config import Settings
+from app.config import ConfigurationUnavailable, Settings
 from app.evaluation.evidence import (
     CriterionResult,
     EvaluationValidationError,
@@ -194,7 +195,7 @@ def _refused(response: Response) -> bool:
 class OpenAIProvider:
     def __init__(self, client: AsyncOpenAI, settings: Settings):
         self._client = client
-        self._model = settings.openai_model
+        self._model = settings.openai_model.strip()
         self._timeout = settings.llm_timeout_seconds
         self._max_attempts = 1 + settings.llm_max_retries
 
@@ -233,12 +234,16 @@ class OpenAIProvider:
             except APIStatusError as error:
                 attempts.record()
                 status = error.status_code
-                if status == 429 and error.code != "insufficient_quota":
+                if status == 408:
+                    code = "AI_TIMEOUT"
+                elif status == 429 and error.code != "insufficient_quota":
                     code = "AI_RATE_LIMIT"
                 elif 500 <= status < 600:
                     code = "AI_UPSTREAM_ERROR"
                 else:
                     self._fail("AI_REQUEST_REJECTED", attempts)
+                if error.response.headers.get("x-should-retry") == "false":
+                    self._fail(code, attempts)
                 delay = max(delay, _retry_after(error))
             except (APIError, ValueError):
                 attempts.record()
@@ -294,15 +299,23 @@ class OpenAIProvider:
             metadata.duration_ms,
             code,
         )
-        raise ProviderFailure(metadata) from None
+        raise ProviderFailure(metadata if attempts.count else None) from None
 
 
 @asynccontextmanager
 async def openai_provider(settings: Settings) -> AsyncIterator[OpenAIProvider]:
     """Own one SDK client for the lifetime of the consuming worker."""
     settings.require_llm()
+    if not settings.openai_model.strip():
+        raise ConfigurationUnavailable("AI_MODEL_NOT_CONFIGURED", "AI model is not configured.")
+    # The SDK merges this environment variable after its generated auth headers.
+    if environ.get("OPENAI_CUSTOM_HEADERS", "").strip():
+        raise ConfigurationUnavailable(
+            "AI_SDK_CONFIG_CONFLICT",
+            "Custom SDK headers are incompatible with the evaluation provider.",
+        )
     # SDK debug records may contain full request bodies or exception chains.
-    for name in ("openai", "httpx", "httpx2", "httpcore"):
+    for name in ("openai", "httpx", "httpx2", "httpcore", "httpcore2"):
         logging.getLogger(name).setLevel(logging.CRITICAL + 1)
     async with AsyncOpenAI(
         api_key=settings.openai_api_key.get_secret_value().strip(),

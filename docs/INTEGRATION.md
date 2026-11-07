@@ -43,8 +43,12 @@ Worker повторно проверяет ответ относительно �
 Абулхаир может использовать следующий порядок запуска. Контекст провайдера
 охватывает весь lifespan приложения, поэтому SDK закрывается после worker.
 `main.py` и `config.py` остаются в зоне интегратора.
+Фабрика выдаёт `AI_SDK_CONFIG_CONFLICT` при заданных `OPENAI_CUSTOM_HEADERS`.
+Эта переменная SDK может подменить заголовок с ключом из Settings.
 
 ```python
+import asyncio
+
 import uvicorn
 
 from app.config import Settings
@@ -58,6 +62,10 @@ async def serve():
         app = create_app(settings, provider=provider, prompt_version=PROMPT_VERSION)
         config = uvicorn.Config(app, host="127.0.0.1", port=8000, access_log=False)
         await uvicorn.Server(config).serve()
+
+
+if __name__ == "__main__":
+    asyncio.run(serve())
 ```
 
 Для живой проверки после подключения импортируйте новый синтетический диалог,
