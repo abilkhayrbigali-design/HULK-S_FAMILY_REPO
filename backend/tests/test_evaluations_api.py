@@ -93,7 +93,9 @@ class FakeProvider:
         result = provider_result(checklist_snapshot)
         if self.mode == "failure":
             raise RuntimeError(SECRET)
-        if self.mode == "known_usage_failure":
+        if self.mode in ("bad_cost", "bad_cost_failure"):
+            result["estimated_cost_usd"] = -1
+        if self.mode in ("known_usage_failure", "bad_cost_failure"):
             raise ProviderFailure(result)
         if self.mode == "bad_evidence":
             result["criterion_results"][0]["evidence"][0]["message_id"] = "m9999"
@@ -332,6 +334,8 @@ def test_concurrency_and_database_writes_during_provider_calls(app_for):
     [
         ("failure", "AI_PROVIDER_ERROR", False),
         ("known_usage_failure", "AI_PROVIDER_ERROR", True),
+        ("bad_cost", "AI_INVALID_RESULT", True),
+        ("bad_cost_failure", "AI_PROVIDER_ERROR", True),
         ("bad_evidence", "AI_INVALID_RESULT", True),
         ("bad_reasons", "AI_INVALID_RESULT", True),
         ("missing_reasons", "AI_INVALID_RESULT", True),
@@ -351,6 +355,8 @@ def test_failure_persists_safe_error_and_available_usage(
         assert (failed["provenance"] is not None) == has_provenance
         if has_provenance:
             assert failed["provenance"]["usage"]["request_count"] == 2
+        if mode in ("bad_cost", "bad_cost_failure"):
+            assert failed["provenance"]["estimated_cost_usd"] is None
         assert SECRET not in json.dumps(failed) + caplog.text
     statuses = [r for r in caplog.records if r.name == "cqa.worker"]
     assert [r.getMessage() for r in statuses] == [

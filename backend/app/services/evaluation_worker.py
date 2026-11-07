@@ -22,6 +22,7 @@ from app.services.errors import require
 logger = logging.getLogger("cqa.worker")
 Counter = Annotated[StrictInt, Field(ge=0)]
 _REVIEW_REASONS = TypeAdapter(list[Text])
+_COST = TypeAdapter(Number | None)
 
 
 class EvaluationProvider(Protocol):
@@ -47,7 +48,6 @@ class ProviderMetadata(BaseModel):
     model_reported: Text | None
     duration_ms: Counter
     usage: Usage
-    estimated_cost_usd: Number | None = None
 
 
 class ProviderFailure(Exception):
@@ -65,15 +65,22 @@ def _load(sessions, evaluation_id):
         return transcript, checklist, row.transcript_version_id
 
 
-def _provenance(metadata, prompt_version):
-    return dict(
-        **metadata.model_dump(),
-        prompt_version=prompt_version,
-    )
-
-
 def _field(result, name):
     return result.get(name) if isinstance(result, dict) else getattr(result, name, None)
+
+
+def _provenance(result, prompt_version):
+    metadata = ProviderMetadata.model_validate(result)
+    try:
+        cost = _COST.validate_python(_field(result, "estimated_cost_usd"))
+        valid_cost = True
+    except (ValidationError, OverflowError):
+        cost = None
+        valid_cost = False
+    return (
+        dict(**metadata.model_dump(), prompt_version=prompt_version, estimated_cost_usd=cost),
+        valid_cost,
+    )
 
 
 async def _save_running(stop, sessions, evaluation_id, **values):
@@ -122,12 +129,10 @@ async def _evaluate(stop, sessions, evaluation_id, provider, prompt_version):
         result = await provider.evaluate(deepcopy(transcript), deepcopy(checklist), prompt_version)
     except ProviderFailure as exc:
         try:
-            metadata = (
-                ProviderMetadata.model_validate(exc.metadata) if exc.metadata is not None else None
-            )
+            provenance, _ = _provenance(exc.metadata, prompt_version)
         except (ValidationError, OverflowError):
-            metadata = None
-        values = {"provenance": _provenance(metadata, prompt_version)} if metadata else {}
+            provenance = None
+        values = {"provenance": provenance} if provenance is not None else {}
         await _fail(stop, sessions, evaluation_id, "AI_PROVIDER_ERROR", **values)
         return
     except Exception as exc:
@@ -136,8 +141,7 @@ async def _evaluate(stop, sessions, evaluation_id, provider, prompt_version):
         return
 
     try:
-        metadata = ProviderMetadata.model_validate(result)
-        provenance = _provenance(metadata, prompt_version)
+        provenance, valid_cost = _provenance(result, prompt_version)
     except (ValidationError, OverflowError):
         await _fail(stop, sessions, evaluation_id, "AI_INVALID_RESULT")
         return
@@ -161,8 +165,8 @@ async def _evaluate(stop, sessions, evaluation_id, provider, prompt_version):
         ]
     try:
         reasons = _REVIEW_REASONS.validate_python(_field(result, "review_reasons"))
-        if metadata.usage.request_count < 1:
-            raise EvaluationValidationError("INVALID_REQUEST_COUNT")
+        if not valid_cost or provenance["usage"]["request_count"] < 1:
+            raise EvaluationValidationError("INVALID_PROVIDER_PROVENANCE")
         assessment = await asyncio.to_thread(
             build_assessment,
             criteria=checklist["criteria"],
