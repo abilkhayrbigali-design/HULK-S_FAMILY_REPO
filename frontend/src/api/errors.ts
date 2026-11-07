@@ -10,6 +10,15 @@ const messages = {
     "Появилась новая версия. Ваши изменения сохранены в форме. Загрузите актуальную версию для сравнения.",
   STATE_CONFLICT:
     "Данные уже изменились. Обновите состояние перед повторной отправкой.",
+  AI_NOT_CONFIGURED:
+    "Провайдер оценки пока недоступен. Обратитесь к интегратору для подключения модели.",
+  AI_PROVIDER_ERROR:
+    "Модель завершила запуск с ошибкой. Можно запустить новую оценку.",
+  AI_INVALID_RESULT:
+    "Ответ модели не прошёл проверку. Оценка не сохранена; можно запустить новую.",
+  INTERRUPTED: "Запуск прервался до завершения. Можно запустить новую оценку.",
+  EVALUATION_INTERNAL_ERROR:
+    "Сервер не смог завершить оценку. Попробуйте позже.",
   NOT_FOUND:
     "Ресурс не найден. Возможно, ссылка устарела или маршрут ещё не подключён.",
   DATASET_UNAVAILABLE:
@@ -27,21 +36,20 @@ const messages = {
   UI_ERROR: "Не удалось показать экран. Перезагрузите страницу.",
 } as const;
 export type ErrorCode = keyof typeof messages;
+export type Mutation =
+  "import" | "save" | "evaluation_start" | "appeal" | "decision";
 export type Event =
   | "load_failed"
-  | "import_started"
-  | "import_completed"
-  | "import_failed"
-  | "save_started"
-  | "save_completed"
-  | "save_failed"
+  | `${Mutation}_${"started" | "completed" | "failed"}`
+  | "evaluation_run_failed"
   | "file_rejected"
   | "form_rejected"
   | "ui_failed";
 export function logEvent(event: Event, status = 0, code?: ErrorCode) {
   const line = `cqa.ui event=${event} status=${status}${code ? ` error=${code}` : ""}`;
   if (code)
-    (code === "INVALID_RESPONSE" ||
+    (event === "evaluation_run_failed" ||
+      code === "INVALID_RESPONSE" ||
       status >= 500 ||
       (status === 0 &&
         !["INVALID_JSON", "FILE_TOO_LARGE", "FORM_INVALID"].includes(code))

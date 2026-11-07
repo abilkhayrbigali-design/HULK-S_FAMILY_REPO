@@ -122,10 +122,11 @@ export const checklistDetailSchema = z.strictObject({
   current_version: checklistVersionSchema,
   versions: z.array(checklistVersionSchema).min(1),
 });
+const evaluationStatus = z.enum(["queued", "running", "completed", "failed"]);
 const latestEvaluation = z
   .object({
     id,
-    status: z.enum(["queued", "running", "completed", "failed"]),
+    status: evaluationStatus,
     original_total: number.nullable(),
     final_total: number.nullable(),
     created_at: z.string(),
@@ -149,6 +150,149 @@ export const conversationSchema = conversationSummarySchema.extend({
     messageInput.extend({ id: text, position: z.number().int().positive() }),
   ),
 });
+
+const evidence = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("message"), message_id: text }),
+  z.object({
+    kind: z.literal("range"),
+    start_message_id: text,
+    end_message_id: text,
+  }),
+]);
+const applicability = z.enum(["applicable", "not_applicable"]);
+const answer = z.union([z.boolean(), number, z.null()]);
+const criterionResult = z.object({
+  criterion_id: text,
+  applicability,
+  answer,
+  explanation: text,
+  evidence: z.array(evidence).min(1),
+  review_reasons: z.array(text),
+});
+const criterionAssessment = criterionResult.extend({
+  weight: number,
+  base_points: number,
+  effective_weight: number,
+  effective_points: number,
+  review_required: z.boolean(),
+});
+const totalScore = number.max(100).nullable();
+const assessment = z.object({
+  total: totalScore,
+  no_applicable_reason: text.nullable(),
+  gross_error: z.boolean().nullable(),
+  criteria: z.array(criterionAssessment).min(1),
+  sections: z.array(
+    z.object({
+      name: text.nullable(),
+      base_points: number,
+      applicable_weight: number,
+      total: totalScore,
+    }),
+  ),
+});
+const counter = z.number().int().nonnegative();
+const provenance = z.object({
+  provider: text,
+  model_requested: text,
+  model_reported: text.nullable(),
+  prompt_version: text,
+  duration_ms: counter,
+  usage: z.object({
+    request_count: counter,
+    input_tokens: counter.nullable(),
+    output_tokens: counter.nullable(),
+    total_tokens: counter.nullable(),
+    cached_input_tokens: counter.nullable(),
+    reasoning_output_tokens: counter.nullable(),
+  }),
+  estimated_cost_usd: number.nullable(),
+});
+const evaluationBase = z.object({
+  id,
+  conversation_id: id,
+  transcript_version_id: id,
+  checklist_version_id: id,
+  revision: counter,
+  created_at: z.string(),
+  review_required: z.boolean(),
+  review_reasons: z.array(text),
+});
+export const evaluationSchema = z.discriminatedUnion("status", [
+  evaluationBase.extend({
+    status: z.enum(["queued", "running"]),
+    completed_at: z.null(),
+    original: z.null(),
+    final: z.null(),
+    provenance: provenance.nullable(),
+    error: z.null(),
+  }),
+  evaluationBase.extend({
+    status: z.literal("completed"),
+    completed_at: z.string(),
+    original: assessment,
+    final: assessment,
+    provenance,
+    error: z.null(),
+  }),
+  evaluationBase.extend({
+    status: z.literal("failed"),
+    completed_at: z.string(),
+    original: z.null(),
+    final: z.null(),
+    provenance: provenance.nullable(),
+    error: z.object({
+      code: text,
+      message: z.string(),
+      details: z.array(z.unknown()),
+    }),
+  }),
+]);
+const decisionBase = z.object({ reason: text, expected_revision: counter });
+export const decisionInputSchema = z.discriminatedUnion("action", [
+  decisionBase.extend({ action: z.literal("confirm") }),
+  decisionBase.extend({
+    action: z.literal("override"),
+    applicability,
+    answer,
+    evidence: z.array(evidence).min(1),
+  }),
+]);
+const decision = decisionBase.extend({
+  id,
+  appeal_id: id,
+  action: z.enum(["confirm", "override"]),
+  created_at: z.string(),
+  result: criterionResult,
+});
+const appealBase = z.object({
+  id,
+  evaluation_id: id,
+  criterion_id: text,
+  comment: text,
+  base_revision: counter,
+  current_revision: counter,
+  created_at: z.string(),
+  original: criterionAssessment,
+  current: criterionAssessment,
+});
+export const appealSchema = z.discriminatedUnion("status", [
+  appealBase.extend({ status: z.literal("open"), decision: z.null() }),
+  appealBase.extend({ status: z.literal("resolved"), decision }),
+]);
+export const decisionResponseSchema = z.object({
+  appeal: appealSchema,
+  evaluation: evaluationSchema,
+});
+export type Evaluation = z.infer<typeof evaluationSchema>;
+export type CompletedEvaluation = Extract<Evaluation, { status: "completed" }>;
+export type Assessment = z.infer<typeof assessment>;
+export type CriterionResult = z.infer<typeof criterionResult>;
+export type CriterionAssessment = z.infer<typeof criterionAssessment>;
+export type Evidence = z.infer<typeof evidence>;
+export type Appeal = z.infer<typeof appealSchema>;
+export type OpenAppeal = Extract<Appeal, { status: "open" }>;
+export type DecisionInput = z.infer<typeof decisionInputSchema>;
 export const importSummarySchema = z.object({
   group_id: text,
   received: z.number().int().nonnegative(),
