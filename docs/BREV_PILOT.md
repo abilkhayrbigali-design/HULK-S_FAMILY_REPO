@@ -159,3 +159,11 @@ WARNING `INVALID_PILOT_INPUT`, прежние данные сохраняютс�
 - [Brev и остановка/удаление экземпляров](https://docs.nvidia.com/ai-workbench/user-guide/latest/locations/brev.html)
 - [Unsloth: Qwen3.5 и BF16 LoRA](https://unsloth.ai/docs/models/qwen3.5/fine-tune)
 - [Transformers Trainer](https://huggingface.co/docs/transformers/main_classes/trainer)
+
+## Выполненная локальная проверка
+
+В отдельной рабочей копии на Python 3.13.18 выполнен
+`make check UV=/tmp/dataton-review-tools/bin/uv`: 214 серверных тестов, включая
+18 новых; Ruff, форматирование и сверка экспортов прошли. Живой `prepare`
+создал девять записей, три части по три и manifest.
+GPU-библиотеки не устанавливались, обучение и платная аренда не запускались.
