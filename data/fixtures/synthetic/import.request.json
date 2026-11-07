@@ -1,0 +1,78 @@
+{
+  "records": [
+    {
+      "conversation_id": "synthetic-ru-001",
+      "channel": "agent chat",
+      "language": "RU",
+      "audio_url": null,
+      "transcript": [
+        {
+          "timestamp": "00:01",
+          "speaker": "client",
+          "text": "Где найти справку?"
+        },
+        {
+          "timestamp": "00:03",
+          "speaker": "operator",
+          "text": "Здравствуйте! Меня зовут Алия. Справка находится в разделе «Документы»."
+        },
+        {
+          "timestamp": "00:05",
+          "speaker": "client",
+          "text": "Спасибо, нашёл."
+        },
+        {
+          "timestamp": "00:07",
+          "speaker": "operator",
+          "text": "Рада помочь. До свидания!"
+        }
+      ]
+    },
+    {
+      "conversation_id": "synthetic-kz-001",
+      "channel": "agent chat",
+      "language": "KZ",
+      "audio_url": null,
+      "transcript": [
+        {
+          "timestamp": "00:01",
+          "speaker": "client",
+          "text": "Анықтаманы қайдан табамын?"
+        },
+        {
+          "timestamp": "00:03",
+          "speaker": "operator",
+          "text": "Сәлеметсіз бе! Менің атым — Әлия. «Құжаттар» бөлімін ашыңыз."
+        }
+      ]
+    },
+    {
+      "conversation_id": "synthetic-en-001",
+      "channel": "voice call",
+      "language": "EN",
+      "audio_url": null,
+      "transcript": [
+        {
+          "timestamp": "2026-11-07T09:00:00Z",
+          "speaker": "system",
+          "text": "Synthetic call started."
+        },
+        {
+          "timestamp": "2026-11-07T09:00:01Z",
+          "speaker": "bot",
+          "text": "Connecting to an operator."
+        },
+        {
+          "timestamp": "2026-11-07T09:00:03Z",
+          "speaker": "client",
+          "text": "Where can I find my statement?"
+        },
+        {
+          "timestamp": "2026-11-07T09:00:05Z",
+          "speaker": "operator",
+          "text": "Hello, I am Aliya. Open the Documents section."
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,71 @@
+{
+  "criterion_results": [
+    {
+      "criterion_id": "greeting_custom",
+      "applicability": "applicable",
+      "answer": true,
+      "explanation": "Синтетический пример структуры: оператор поздоровался.",
+      "evidence": [
+        {
+          "kind": "message",
+          "message_id": "m0002"
+        }
+      ],
+      "review_reasons": []
+    },
+    {
+      "criterion_id": "navigation_custom",
+      "applicability": "applicable",
+      "answer": 5,
+      "explanation": "Синтетический пример структуры ответа. Это не экспертная разметка.",
+      "evidence": [
+        {
+          "kind": "message",
+          "message_id": "m0002"
+        }
+      ],
+      "review_reasons": []
+    },
+    {
+      "criterion_id": "followup_custom",
+      "applicability": "not_applicable",
+      "answer": null,
+      "explanation": "Повторного вопроса нет; проверен полный диапазон диалога.",
+      "evidence": [
+        {
+          "kind": "range",
+          "start_message_id": "m0001",
+          "end_message_id": "m0004"
+        }
+      ],
+      "review_reasons": []
+    },
+    {
+      "criterion_id": "risk_custom",
+      "applicability": "applicable",
+      "answer": false,
+      "explanation": "В проверенном синтетическом диапазоне предложение личного перевода отсутствует.",
+      "evidence": [
+        {
+          "kind": "range",
+          "start_message_id": "m0001",
+          "end_message_id": "m0004"
+        }
+      ],
+      "review_reasons": []
+    }
+  ],
+  "provider": "synthetic",
+  "model_requested": "synthetic-example",
+  "model_reported": null,
+  "usage": {
+    "request_count": 1,
+    "input_tokens": null,
+    "output_tokens": null,
+    "total_tokens": null,
+    "cached_input_tokens": null,
+    "reasoning_output_tokens": null
+  },
+  "duration_ms": 0,
+  "review_reasons": []
+}

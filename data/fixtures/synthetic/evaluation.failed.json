@@ -1,0 +1,20 @@
+{
+  "id": "00000000-0000-4000-8000-000000000005",
+  "conversation_id": "00000000-0000-4000-8000-000000000001",
+  "transcript_version_id": "00000000-0000-4000-8000-000000000002",
+  "checklist_version_id": "00000000-0000-4000-8000-000000000004",
+  "status": "failed",
+  "revision": 0,
+  "created_at": "2026-11-07T09:00:00Z",
+  "completed_at": "2026-11-07T09:00:00Z",
+  "original": null,
+  "final": null,
+  "review_required": false,
+  "review_reasons": [],
+  "provenance": null,
+  "error": {
+    "code": "AI_NOT_CONFIGURED",
+    "message": "AI API key is not configured.",
+    "details": []
+  }
+}
