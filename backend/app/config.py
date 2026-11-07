@@ -2,13 +2,33 @@
 
 from pathlib import Path
 from typing import Literal
-from urllib.parse import urlsplit
+from urllib.parse import SplitResult, urlsplit
 
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import URL, make_url
+from sqlalchemy.exc import ArgumentError
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _parse_http_url(value: str) -> SplitResult:
+    """Validate without normalizing signed URLs; callers replace parser error messages."""
+    if any(
+        character.isspace() or ord(character) < 32 or ord(character) == 127 for character in value
+    ):
+        raise ValueError("Whitespace and control characters are not permitted in a URL")
+    parsed = urlsplit(value)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+    ):
+        raise ValueError("An HTTP URL without credentials is required")
+    # urlsplit defers validation of non-numeric and out-of-range ports to this property.
+    _ = parsed.port
+    return parsed
 
 
 class ConfigurationUnavailable(Exception):
@@ -48,14 +68,14 @@ class Settings(BaseSettings):
     def validate_dataset_url(cls, value: SecretStr) -> SecretStr:
         raw = value.get_secret_value()
         if raw:
-            parsed = urlsplit(raw)
-            if (
-                parsed.scheme != "https"
-                or not parsed.hostname
-                or parsed.username
-                or parsed.password
-            ):
-                raise ValueError("CQA_DATASET_API_URL must be an HTTPS URL without credentials")
+            try:
+                parsed = _parse_http_url(raw)
+                if parsed.scheme != "https" or "#" in raw:
+                    raise ValueError("HTTPS without a fragment is required")
+            except ValueError:
+                raise ValueError(
+                    "CQA_DATASET_API_URL must be an HTTPS URL without credentials or a fragment"
+                ) from None
         return value
 
     @field_validator("database_url")
@@ -63,9 +83,17 @@ class Settings(BaseSettings):
     def validate_database_url(cls, value: str) -> str:
         try:
             parsed = make_url(value)
-        except Exception:
+        except (ArgumentError, ValueError):
             raise ValueError("CQA_DATABASE_URL must be a SQLite URL") from None
-        if parsed.drivername != "sqlite" or parsed.host or not parsed.database or parsed.query:
+        if (
+            parsed.drivername != "sqlite"
+            or parsed.host is not None
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.port is not None
+            or not parsed.database
+            or parsed.query
+        ):
             raise ValueError("CQA_DATABASE_URL must be a local sqlite:///path URL")
         return value
 
@@ -76,17 +104,14 @@ class Settings(BaseSettings):
         if not origins:
             raise ValueError("CQA_ALLOWED_ORIGINS must contain at least one origin")
         for origin in origins:
-            parsed = urlsplit(origin)
-            if (
-                parsed.scheme not in {"http", "https"}
-                or not parsed.hostname
-                or parsed.username
-                or parsed.password
-                or parsed.path
-                or parsed.query
-                or parsed.fragment
-            ):
-                raise ValueError("CQA_ALLOWED_ORIGINS must contain comma-separated HTTP origins")
+            try:
+                parsed = _parse_http_url(origin)
+                if parsed.path or "?" in origin or "#" in origin:
+                    raise ValueError("An origin cannot have a path, query or fragment")
+            except ValueError:
+                raise ValueError(
+                    "CQA_ALLOWED_ORIGINS must contain comma-separated HTTP origins"
+                ) from None
         return ",".join(origins)
 
     @property
