@@ -179,6 +179,18 @@ def chat_messages(example: Example) -> list[dict]:
     ]
 
 
+def text_tokenizer(processor):
+    """Qwen3.5 can return a VLM processor; the text collator needs its tokenizer."""
+    tokenizer = getattr(processor, "tokenizer", processor)
+    if not callable(getattr(tokenizer, "encode", None)):
+        raise PilotError("TEXT_TOKENIZER_REQUIRED")
+    if not getattr(tokenizer, "chat_template", None):
+        tokenizer.chat_template = getattr(processor, "chat_template", None)
+    if not tokenizer.chat_template:
+        raise PilotError("CHAT_TEMPLATE_REQUIRED")
+    return tokenizer
+
+
 def features(tokenizer, example: Example, max_length: int) -> dict:
     prompt = tokenizer.apply_chat_template(
         chat_messages(example),
@@ -254,6 +266,9 @@ def train(args) -> dict:
         with quiet_libraries():
             os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
             os.environ["TOKENIZERS_PARALLELISM"] = "false"
+            # Unsloth patches Transformers at import time; preserve this order.
+            from unsloth import FastLanguageModel  # isort: skip
+
             import torch
             from transformers import (
                 DataCollatorForSeq2Seq,
@@ -261,7 +276,6 @@ def train(args) -> dict:
                 TrainerCallback,
                 TrainingArguments,
             )
-            from unsloth import FastLanguageModel
 
             if not torch.cuda.is_available() or not torch.cuda.is_bf16_supported():
                 raise PilotError("BF16_GPU_REQUIRED")
@@ -269,15 +283,17 @@ def train(args) -> dict:
                 name: importlib.metadata.version(name)
                 for name in ("torch", "transformers", "unsloth", "peft")
             }
-            model, tokenizer = FastLanguageModel.from_pretrained(
+            model, processor = FastLanguageModel.from_pretrained(
                 model_name=args.model,
                 revision=args.revision,
                 max_seq_length=args.max_length,
                 load_in_4bit=False,
                 load_in_16bit=True,
+                use_exact_model_name=True,
                 dtype=torch.bfloat16,
                 full_finetuning=False,
             )
+            tokenizer = text_tokenizer(processor)
             model = FastLanguageModel.get_peft_model(
                 model,
                 r=16,

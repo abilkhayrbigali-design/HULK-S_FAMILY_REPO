@@ -119,6 +119,18 @@ class Tokenizer:
         return [1, 2] if text == "prompt" else [3, 4, 5]
 
 
+def test_vlm_processor_exposes_its_text_tokenizer_and_chat_template():
+    tokenizer = Tokenizer()
+    processor = type("Processor", (), {"tokenizer": tokenizer, "chat_template": "template"})()
+    assert pilot.text_tokenizer(processor) is tokenizer
+    assert tokenizer.chat_template == "template"
+
+
+def test_missing_chat_template_refuses_training():
+    with pytest.raises(pilot.PilotError, match="CHAT_TEMPLATE_REQUIRED"):
+        pilot.text_tokenizer(Tokenizer())
+
+
 def test_loss_excludes_prompt_and_includes_answer_and_eos():
     example = pilot.read_examples(SOURCE)[0]
     features = pilot.features(Tokenizer(), example, 6)
