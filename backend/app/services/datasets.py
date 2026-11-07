@@ -2,6 +2,7 @@ import logging
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
+
 from app.schemas.data import ImportRequest
 from app.schemas.urls import valid_http_url
 from app.services.errors import ServiceError
@@ -28,9 +29,7 @@ def fetch_records(configured_url, group_id, transport=None):
     try:
         url = dataset_url(configured_url, group_id)
         # Disable httpx/httpcore request loggers at application integration: URLs are signed.
-        with httpx.Client(
-            timeout=30, follow_redirects=False, transport=transport
-        ) as client:
+        with httpx.Client(timeout=30, follow_redirects=False, transport=transport) as client:
             response = client.get(url)
             response.raise_for_status()
             body = response.json()
@@ -54,9 +53,7 @@ def fetch_records(configured_url, group_id, transport=None):
         raise
     except httpx.InvalidURL:
         logger.warning("event=dataset_fetch_rejected error=DATASET_UNAVAILABLE")
-        raise ServiceError(
-            503, "DATASET_UNAVAILABLE", "Источник данных не настроен"
-        ) from None
+        raise ServiceError(503, "DATASET_UNAVAILABLE", "Источник данных не настроен") from None
     except (httpx.HTTPError, ValueError, KeyError, TypeError):
         logger.error("event=dataset_fetch_failed error=DATASET_ERROR")
         raise ServiceError(

@@ -1,0 +1,110 @@
+{
+  "synthetic": true,
+  "purpose": "Wire-format examples only. Not model outputs or human quality labels.",
+  "fixtures": [
+    {
+      "file": "import.request.json",
+      "schema": "ConversationImportRequest"
+    },
+    {
+      "file": "dataset-import.request.json",
+      "schema": "DatasetImportRequest"
+    },
+    {
+      "file": "import.response.json",
+      "schema": "ImportSummary"
+    },
+    {
+      "file": "conversations.response.json",
+      "schema": "ConversationSummaryPage"
+    },
+    {
+      "file": "conversation.response.json",
+      "schema": "ConversationDetail"
+    },
+    {
+      "file": "transcript.snapshot.json",
+      "schema": "TranscriptSnapshot"
+    },
+    {
+      "file": "checklist.initial.json",
+      "schema": "ChecklistCreate"
+    },
+    {
+      "file": "checklist-version.response.json",
+      "schema": "ChecklistVersion"
+    },
+    {
+      "file": "checklist-version.request.json",
+      "schema": "ChecklistVersionCreate"
+    },
+    {
+      "file": "checklists.response.json",
+      "schema": "ChecklistSummaryPage"
+    },
+    {
+      "file": "checklist.response.json",
+      "schema": "ChecklistDetail"
+    },
+    {
+      "file": "provider.response.json",
+      "schema": "ProviderResult"
+    },
+    {
+      "file": "evaluation.request.json",
+      "schema": "EvaluationCreate"
+    },
+    {
+      "file": "evaluation.queued.json",
+      "schema": "Evaluation"
+    },
+    {
+      "file": "evaluation.running.json",
+      "schema": "Evaluation"
+    },
+    {
+      "file": "evaluation.failed.json",
+      "schema": "Evaluation"
+    },
+    {
+      "file": "evaluation.completed.json",
+      "schema": "Evaluation"
+    },
+    {
+      "file": "evaluations.response.json",
+      "schema": "EvaluationPage"
+    },
+    {
+      "file": "appeal.request.json",
+      "schema": "AppealCreate"
+    },
+    {
+      "file": "appeal.open.json",
+      "schema": "Appeal"
+    },
+    {
+      "file": "appeals.response.json",
+      "schema": "AppealPage"
+    },
+    {
+      "file": "decision.confirm.json",
+      "schema": "DecisionCreate"
+    },
+    {
+      "file": "decision.override.json",
+      "schema": "DecisionCreate"
+    },
+    {
+      "file": "decision.response.json",
+      "schema": "DecisionResponse"
+    },
+    {
+      "file": "error.validation.json",
+      "schema": "Error"
+    },
+    {
+      "file": "error.conflict.json",
+      "schema": "Error"
+    }
+  ]
+}

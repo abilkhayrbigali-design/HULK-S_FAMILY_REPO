@@ -1,15 +1,14 @@
-"""Run against A-01 when available; no framework files are copied into this branch."""
+"""Integration with A-01's shared diagnostics and request middleware."""
 
-import pytest
-from app.api.install import install_data_api
-from app.db.migrate import migrate
-from app.db.session import make_engine, session_factory
-from app.services.seed import seed
 from fastapi.testclient import TestClient
 from sqlalchemy import event
 from sqlalchemy.exc import OperationalError
 
-core = pytest.importorskip("app.main", reason="A-01 is not present in this branch")
+from app import main as core
+from app.api.install import install_data_api
+from app.db.migrate import migrate
+from app.db.session import make_engine, session_factory
+from app.services.seed import seed
 
 
 def test_data_api_with_shared_errors_and_request_middleware(tmp_path, caplog):

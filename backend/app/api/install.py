@@ -2,24 +2,20 @@
 
 import logging
 
-from app.api.routes.data import router
-from app.services.errors import ServiceError, log_internal_error
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError, OperationalError
 
-
-def _error_response(status, code, message, details=None, *, request):
-    # Standalone fallback until the integrator supplies app.main.error_response.
-    request.scope.setdefault("state", {})["_cqa_error_code"] = code
-    return JSONResponse(
-        status_code=status,
-        content={"error": {"code": code, "message": message, "details": details or []}},
-    )
+from app.api.routes.data import router
+from app.diagnostics import log_internal_error
+from app.services.errors import ServiceError
 
 
 def install_data_api(app, session_factory, *, dataset_url="", error_response=None):
-    respond = error_response or _error_response
+    if error_response is None:
+        # Import when wiring the app: main may import this installer before defining helpers.
+        from app.main import error_response
+
+    respond = error_response
     app.state.session_factory = session_factory
     app.state.dataset_url = dataset_url
     # These clients otherwise log complete signed URLs at INFO/DEBUG, even on success.
@@ -41,9 +37,7 @@ def install_data_api(app, session_factory, *, dataset_url="", error_response=Non
             [
                 {
                     # Unknown field names are untrusted input, too.
-                    "location": list(
-                        e["loc"][:-1] if e["type"] == "extra_forbidden" else e["loc"]
-                    ),
+                    "location": list(e["loc"][:-1] if e["type"] == "extra_forbidden" else e["loc"]),
                     "type": e["type"],
                 }
                 for e in exc.errors()
@@ -53,12 +47,8 @@ def install_data_api(app, session_factory, *, dataset_url="", error_response=Non
 
     @app.exception_handler(IntegrityError)
     async def integrity_error(request, exc):
-        logging.getLogger("cqa.data").warning(
-            "event=data_write_conflict error=STATE_CONFLICT"
-        )
-        return respond(
-            409, "STATE_CONFLICT", "Конфликт сохранения данных", request=request
-        )
+        logging.getLogger("cqa.data").warning("event=data_write_conflict error=STATE_CONFLICT")
+        return respond(409, "STATE_CONFLICT", "Конфликт сохранения данных", request=request)
 
     @app.exception_handler(OperationalError)
     async def database_error(request, exc):

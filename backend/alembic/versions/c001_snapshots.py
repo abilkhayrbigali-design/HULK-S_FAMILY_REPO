@@ -19,7 +19,8 @@ CREATE TABLE conversations (
 	PRIMARY KEY (id), 
 	UNIQUE (source, group_id, external_id), 
 	CHECK (source IN ('upload', 'dataset')), 
-	FOREIGN KEY(id, current_transcript_version_id) REFERENCES transcript_versions (conversation_id, id)
+	FOREIGN KEY(id, current_transcript_version_id)
+        REFERENCES transcript_versions (conversation_id, id)
 )
 
 """)
@@ -42,7 +43,8 @@ CREATE TABLE transcript_versions (
 
 """)
     op.execute(
-        "CREATE INDEX ix_transcript_versions_conversation_id ON transcript_versions (conversation_id)"
+        "CREATE INDEX ix_transcript_versions_conversation_id "
+        "ON transcript_versions (conversation_id)"
     )
     op.execute("""
 CREATE TABLE messages (
@@ -93,24 +95,13 @@ CREATE TABLE checklist_versions (
     op.execute(
         "CREATE INDEX ix_checklist_versions_checklist_id ON checklist_versions (checklist_id)"
     )
-    op.execute(
-        "CREATE TRIGGER immutable_transcript_versions_update BEFORE UPDATE ON transcript_versions BEGIN SELECT RAISE(ABORT, 'immutable snapshot'); END"
-    )
-    op.execute(
-        "CREATE TRIGGER immutable_transcript_versions_delete BEFORE DELETE ON transcript_versions BEGIN SELECT RAISE(ABORT, 'immutable snapshot'); END"
-    )
-    op.execute(
-        "CREATE TRIGGER immutable_messages_update BEFORE UPDATE ON messages BEGIN SELECT RAISE(ABORT, 'immutable snapshot'); END"
-    )
-    op.execute(
-        "CREATE TRIGGER immutable_messages_delete BEFORE DELETE ON messages BEGIN SELECT RAISE(ABORT, 'immutable snapshot'); END"
-    )
-    op.execute(
-        "CREATE TRIGGER immutable_checklist_versions_update BEFORE UPDATE ON checklist_versions BEGIN SELECT RAISE(ABORT, 'immutable snapshot'); END"
-    )
-    op.execute(
-        "CREATE TRIGGER immutable_checklist_versions_delete BEFORE DELETE ON checklist_versions BEGIN SELECT RAISE(ABORT, 'immutable snapshot'); END"
-    )
+    for table in ("transcript_versions", "messages", "checklist_versions"):
+        for operation in ("UPDATE", "DELETE"):
+            op.execute(
+                f"CREATE TRIGGER immutable_{table}_{operation.lower()} "
+                f"BEFORE {operation} ON {table} "
+                "BEGIN SELECT RAISE(ABORT, 'immutable snapshot'); END"
+            )
 
 
 def downgrade():

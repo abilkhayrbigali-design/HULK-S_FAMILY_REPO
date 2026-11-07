@@ -1,0 +1,138 @@
+{
+  "id": "00000000-0000-4000-8000-000000000003",
+  "name": "Синтетический пользовательский чек-лист",
+  "current_version": {
+    "id": "00000000-0000-4000-8000-000000000004",
+    "checklist_id": "00000000-0000-4000-8000-000000000003",
+    "name": "Синтетический пользовательский чек-лист",
+    "version_number": 1,
+    "created_at": "2026-11-07T09:00:00Z",
+    "criteria": [
+      {
+        "id": "greeting_custom",
+        "name": "Приветствие",
+        "instruction": "Поздоровался ли оператор?",
+        "type": "binary",
+        "weight": 40,
+        "allow_na": false,
+        "na_rule": null,
+        "scale": null,
+        "section": "Контакт"
+      },
+      {
+        "id": "navigation_custom",
+        "name": "Понятность инструкции",
+        "instruction": "Синтетическая учебная шкала понятности инструкции.",
+        "type": "scale",
+        "weight": 60,
+        "allow_na": false,
+        "na_rule": null,
+        "scale": [
+          {
+            "value": 0,
+            "description": "Нет инструкции"
+          },
+          {
+            "value": 5,
+            "description": "Есть общий шаг"
+          },
+          {
+            "value": 10,
+            "description": "Все шаги перечислены"
+          }
+        ],
+        "section": "Решение"
+      },
+      {
+        "id": "followup_custom",
+        "name": "Повторное обращение",
+        "instruction": "Обработан ли повторный вопрос в этом диалоге?",
+        "type": "binary",
+        "weight": 20,
+        "allow_na": true,
+        "na_rule": "В диалоге нет повторного вопроса",
+        "scale": null,
+        "section": "Решение"
+      },
+      {
+        "id": "risk_custom",
+        "name": "Синтетический флаг",
+        "instruction": "Обнаружено ли предложение личного перевода?",
+        "type": "flag",
+        "weight": 0,
+        "allow_na": false,
+        "na_rule": null,
+        "scale": null,
+        "section": "Нарушения"
+      }
+    ]
+  },
+  "versions": [
+    {
+      "id": "00000000-0000-4000-8000-000000000004",
+      "checklist_id": "00000000-0000-4000-8000-000000000003",
+      "name": "Синтетический пользовательский чек-лист",
+      "version_number": 1,
+      "created_at": "2026-11-07T09:00:00Z",
+      "criteria": [
+        {
+          "id": "greeting_custom",
+          "name": "Приветствие",
+          "instruction": "Поздоровался ли оператор?",
+          "type": "binary",
+          "weight": 40,
+          "allow_na": false,
+          "na_rule": null,
+          "scale": null,
+          "section": "Контакт"
+        },
+        {
+          "id": "navigation_custom",
+          "name": "Понятность инструкции",
+          "instruction": "Синтетическая учебная шкала понятности инструкции.",
+          "type": "scale",
+          "weight": 60,
+          "allow_na": false,
+          "na_rule": null,
+          "scale": [
+            {
+              "value": 0,
+              "description": "Нет инструкции"
+            },
+            {
+              "value": 5,
+              "description": "Есть общий шаг"
+            },
+            {
+              "value": 10,
+              "description": "Все шаги перечислены"
+            }
+          ],
+          "section": "Решение"
+        },
+        {
+          "id": "followup_custom",
+          "name": "Повторное обращение",
+          "instruction": "Обработан ли повторный вопрос в этом диалоге?",
+          "type": "binary",
+          "weight": 20,
+          "allow_na": true,
+          "na_rule": "В диалоге нет повторного вопроса",
+          "scale": null,
+          "section": "Решение"
+        },
+        {
+          "id": "risk_custom",
+          "name": "Синтетический флаг",
+          "instruction": "Обнаружено ли предложение личного перевода?",
+          "type": "flag",
+          "weight": 0,
+          "allow_na": false,
+          "na_rule": null,
+          "scale": null,
+          "section": "Нарушения"
+        }
+      ]
+    }
+  ]
+}

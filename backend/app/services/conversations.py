@@ -1,9 +1,10 @@
 import hashlib
 import json
 
+from sqlalchemy import func, select, text
+
 from app.models.data import Conversation, Message, TranscriptVersion
 from app.services.errors import require
-from sqlalchemy import func, select, text
 
 
 def import_records(session, payload, source="upload", group_id="UPLOAD"):
@@ -28,9 +29,7 @@ def import_records(session, payload, source="upload", group_id="UPLOAD"):
         )
         fresh = row is None
         if fresh:
-            row = Conversation(
-                source=source, group_id=group_id, external_id=record.conversation_id
-            )
+            row = Conversation(source=source, group_id=group_id, external_id=record.conversation_id)
             session.add(row)
             session.flush()
         digest = hashlib.sha256(
@@ -73,8 +72,7 @@ def import_records(session, payload, source="upload", group_id="UPLOAD"):
         summary["conversation_ids"].append(row.id)
     session.flush()
     session.info["cqa_import_summary"] = {
-        key: summary[key]
-        for key in ("received", "created", "new_versions", "unchanged")
+        key: summary[key] for key in ("received", "created", "new_versions", "unchanged")
     }
     return summary
 
@@ -82,9 +80,7 @@ def import_records(session, payload, source="upload", group_id="UPLOAD"):
 def summary(session, row):
     version = session.get(TranscriptVersion, row.current_transcript_version_id)
     count = session.scalar(
-        select(func.count())
-        .select_from(Message)
-        .where(Message.transcript_version_id == version.id)
+        select(func.count()).select_from(Message).where(Message.transcript_version_id == version.id)
     )
     return _summary(row, version, count)
 
@@ -124,10 +120,7 @@ def detail(session, conversation_id, transcript_version_id=None):
         transcript_version_id=version.id,
         audio_url=version.audio_url,
         messages=[
-            {
-                k: getattr(m, k)
-                for k in ("id", "position", "timestamp", "speaker", "text")
-            }
+            {k: getattr(m, k) for k in ("id", "position", "timestamp", "speaker", "text")}
             for m in messages
         ],
     )

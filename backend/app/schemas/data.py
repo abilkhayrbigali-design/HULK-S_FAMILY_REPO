@@ -2,7 +2,6 @@
 
 from typing import Annotated, Literal
 
-from app.schemas.urls import valid_http_url
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -13,6 +12,8 @@ from pydantic import (
     StringConstraints,
     model_validator,
 )
+
+from app.schemas.urls import valid_http_url
 
 Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 Number = Annotated[StrictInt | StrictFloat, Field(ge=0, allow_inf_nan=False)]
@@ -52,9 +53,7 @@ class Criterion(Schema):
         if self.type == "scale":
             values = [step.value for step in self.scale or []]
             if len(values) < 2 or len(set(values)) != len(values) or max(values) <= 0:
-                raise ValueError(
-                    "Scale requires distinct nonnegative steps and positive maximum"
-                )
+                raise ValueError("Scale requires distinct nonnegative steps and positive maximum")
         elif self.scale is not None:
             raise ValueError("Only scale criteria may define steps")
         return self

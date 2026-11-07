@@ -2,8 +2,10 @@
 
 Ветка `codex/chingiz`. Реализованы хранение снимков, начальный чек-лист,
 редактор версий, JSON/HTTP-импорт, список и карточка диалогов.
-Это ещё не запускаемое целиком приложение: `main.py`, настройки и manifest/lock
-остаются зоной Абулхаира. Отменённая реализация A-01/A-02 не восстанавливалась.
+В C-07 ветка синхронизирована с текущим `origin/main` (ea6ff60): каркас,
+настройки и manifest/lock получены без изменений реализации Абулхаира.
+Автоматическое подключение бизнес-маршрутов в `create_app` ещё не выполнено;
+готовые модули подключаются через вход ниже. Worker/AI и апелляции отсутствуют.
 
 ## Подключение к серверному каркасу
 
@@ -32,11 +34,10 @@ install_data_api(
 разрешается настройками от корня репозитория, подписанный URL извлекается из
 SecretStr только на сервере. Не выводите URL в журнал. Миграцию/seed выполнить
 перед приёмом запросов, engine.dispose() — при остановке. `/health` уже реализован
-интегратором. `install_data_api` переиспользует переданный `app.main.error_response`,
-включая код в HTTP-сводке; диагностика автоматически использует
-`app.diagnostics.log_internal_error`, если каркас присутствует. Без A-01 остаются
-безопасные локальные обработчики без текста исключений. Конфигурацию журналов
-устанавливает каркас, а не модули данных.
+интегратором. `install_data_api` использует `app.main.error_response` (по умолчанию
+либо переданный явно), включая код в HTTP-сводке; диагностика переиспользует
+`app.diagnostics.log_internal_error`. Локальные fallback-обработчики удалены
+после C-07. Конфигурацию журналов устанавливает каркас, а не модули данных.
 
 Миграция запускается отдельно из корня репозитория:
 
@@ -63,21 +64,15 @@ HTTPX/httpcore logging отключён до уровня CRITICAL: INFO/DEBUG �
 
 ## Проверка
 
-Пока manifest отсутствует в этой ветке, временное окружение можно создать вне Git:
+Установка и общая проверка выполняются из корня репозитория по lock:
 
 ```bash
-python -m venv /tmp/cqa-venv
-/tmp/cqa-venv/bin/pip install fastapi==0.162.1 pydantic==2.14.3 sqlalchemy==2.1.8 alembic==1.20.1 httpx==0.28.1 httpx2==2.16.0 pytest==9.2.0 ruff==0.17.4
-PYTHONPATH=backend /tmp/cqa-venv/bin/python -m pytest backend/tests/test_data_api.py -q -W error
-/tmp/cqa-venv/bin/ruff check backend --select E,F,I,UP,B --ignore E501
-/tmp/cqa-venv/bin/ruff format backend --check
+make setup
+make check
 ```
 
-Зависимости совместимы с диапазонами сохранённого manifest Абулхаира, но этот
-manifest не перенесён. Итоговый lock и общую CI подтверждает интегратор.
-В управляемой среде TestClient зависал при запуске event loop внутри sandbox;
-тот же набор вне sandbox прошёл. Синтетические HTTP-ответы проверяют адаптер,
-а не доступ к реальному DEV API. Подписанная ссылка не предоставлена.
+Синтетические HTTP-ответы проверяют адаптер, а не доступ к реальному DEV API.
+Подписанная ссылка не предоставлена. Ключи и реальный AI в этих тестах не нужны.
 
 ## Оставшаяся работа
 
@@ -121,23 +116,21 @@ URL сохраняются без нормализации. CLI миграций
 
 Тест commit проверяет загрузку JSON, dataset-импорт, создание чек-листа и новой
 версии: rollback, сохранность истории, отсутствие успешного события и приватных
-маркеров в ответе/`caplog`. Фактически выполнены (Python 3.13, зависимости
-окружения интегратора; `-S` исключает его editable-привязку к другой рабочей копии):
+маркеров в ответе/`caplog`. Итоговые проверки после C-07 (Python 3.13,
+собственное окружение рабочей копии из неизменённого `backend/uv.lock`):
 
 ```bash
-CQA_REVIEW_PYTHON=/home/abilkhayr/Work/Dataton/backend/.venv/bin/python
-CQA_REVIEW_SITE=/home/abilkhayr/Work/Dataton/backend/.venv/lib/python3.13/site-packages
-PYTHONPATH="backend:$CQA_REVIEW_SITE" "$CQA_REVIEW_PYTHON" -S -m pytest backend/tests -q -W error
-/home/abilkhayr/Work/Dataton/backend/.venv/bin/ruff check backend --select E,F,I,UP,B --ignore E501
-/home/abilkhayr/Work/Dataton/backend/.venv/bin/ruff format backend --check
+/tmp/dataton-review-tools/bin/uv sync --project backend --locked
+make check UV=/tmp/dataton-review-tools/bin/uv
 git diff --check
 ```
 
-В ветке: **37 passed, 1 skipped** (интеграционный модуль пропущен без A-01).
-Во временной копии `git archive origin/main` (`ea6ff60`) с наложенными каталогами
-`backend/app`, `backend/tests`, `backend/alembic` этой ветки та же команда pytest
-дала **129 passed**. `test_data_core_integration.py` подключает API к настоящему
+В ветке: **129 passed**, без пропусков; lint/форматирование/неизменность экспортов
+прошли без отключения E501. До C-07 отдельно проходили 37 тестов данных,
+1 интеграционный модуль пропускался без A-01; временная проверка с наложением
+модулей на origin/main дала 129 passed. `test_data_core_integration.py` подключает API к настоящему
 `create_app`: проверяет общий `error_response`, одну HTTP-сводку/одну диагностику
 при сбое commit, уровни/коды и отсутствие приватных данных. Ruff check/format и
-`git diff --check` прошли. Ветки не объединялись; автоматическое подключение API
+`git diff --check` прошли. В C-07 выполнен merge main в codex/chingiz с сохранением
+истории обеих сторон; сама main не менялась. Автоматическое подключение API
 в `main.py`, worker/AI и апелляции остаются за пределами этого ревью.

@@ -5,8 +5,7 @@ from urllib.parse import urlsplit
 
 def valid_http_url(value: str, *, https_only=False, allow_fragment=True) -> bool:
     if any(
-        character.isspace() or ord(character) < 32 or ord(character) == 127
-        for character in value
+        character.isspace() or ord(character) < 32 or ord(character) == 127 for character in value
     ):
         return False
     try:

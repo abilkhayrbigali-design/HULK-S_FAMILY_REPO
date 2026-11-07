@@ -4,16 +4,15 @@ import logging
 import sys
 from pathlib import Path
 
-from alembic import command
 from alembic.config import Config
-from app.services.errors import log_internal_error
+
+from alembic import command
+from app.diagnostics import log_internal_error
 
 
 def migrate(url):
     config = Config()
-    config.set_main_option(
-        "script_location", str(Path(__file__).resolve().parents[2] / "alembic")
-    )
+    config.set_main_option("script_location", str(Path(__file__).resolve().parents[2] / "alembic"))
     config.set_main_option("sqlalchemy.url", url.replace("%", "%%"))
     command.upgrade(config, "head")
 

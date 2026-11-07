@@ -1,8 +1,9 @@
 import logging
 
+from sqlalchemy import select, update
+
 from app.models.data import Checklist, ChecklistVersion
 from app.services.errors import ServiceError, require
-from sqlalchemy import select, update
 
 
 def snapshot(row):
@@ -33,9 +34,7 @@ def create(session, payload, *, seed_key=None):
     session.flush()
     checklist.current_version_id = version.id
     session.flush()
-    session.info["cqa_checklist_versions"] = (
-        session.info.get("cqa_checklist_versions", 0) + 1
-    )
+    session.info["cqa_checklist_versions"] = session.info.get("cqa_checklist_versions", 0) + 1
     return snapshot(version)
 
 
@@ -66,9 +65,7 @@ def add_version(session, checklist_id, payload):
     session.flush()
     checklist.current_version_id = version.id
     session.flush()
-    session.info["cqa_checklist_versions"] = (
-        session.info.get("cqa_checklist_versions", 0) + 1
-    )
+    session.info["cqa_checklist_versions"] = session.info.get("cqa_checklist_versions", 0) + 1
     return snapshot(version)
 
 

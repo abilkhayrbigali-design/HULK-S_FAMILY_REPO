@@ -1,5 +1,8 @@
 from typing import Annotated
 
+from fastapi import APIRouter, Depends, Query, Request
+from sqlalchemy import func, select
+
 from app.models.data import Checklist, Conversation, TranscriptVersion
 from app.schemas.data import (
     Channel,
@@ -10,8 +13,6 @@ from app.schemas.data import (
     Language,
 )
 from app.services import checklists, conversations, datasets
-from fastapi import APIRouter, Depends, Query, Request
-from sqlalchemy import func, select
 
 router = APIRouter(prefix="/api/v1")
 
@@ -30,9 +31,7 @@ Offset = Annotated[int, Query(ge=0)]
 def page(db, statement, limit, offset, convert):
     total = db.scalar(select(func.count()).select_from(statement.subquery()))
     return dict(
-        items=[
-            convert(row) for row in db.scalars(statement.limit(limit).offset(offset))
-        ],
+        items=[convert(row) for row in db.scalars(statement.limit(limit).offset(offset))],
         total=total,
         limit=limit,
         offset=offset,
@@ -41,9 +40,7 @@ def page(db, statement, limit, offset, convert):
 
 @router.get("/checklists")
 def list_checklists(db: DB, limit: Limit = 50, offset: Offset = 0):
-    return page(
-        db, select(Checklist).order_by(Checklist.id), limit, offset, checklists.metadata
-    )
+    return page(db, select(Checklist).order_by(Checklist.id), limit, offset, checklists.metadata)
 
 
 @router.post("/checklists", status_code=201)

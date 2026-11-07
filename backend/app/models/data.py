@@ -52,9 +52,7 @@ class TranscriptVersion(Base):
         CheckConstraint("channel IN ('agent chat', 'voice call')"),
     )
     id: Mapped[str] = mapped_column(String, primary_key=True, default=uuid)
-    conversation_id: Mapped[str] = mapped_column(
-        ForeignKey("conversations.id"), index=True
-    )
+    conversation_id: Mapped[str] = mapped_column(ForeignKey("conversations.id"), index=True)
     content_hash: Mapped[str]
     language: Mapped[str]
     channel: Mapped[str]

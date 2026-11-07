@@ -30,7 +30,8 @@ def session_factory(engine):
         summary = session.info.pop("cqa_import_summary", None)
         if summary is not None:
             logging.getLogger("cqa.import").info(
-                "event=dataset_import_completed status=completed records=%d created=%d new_versions=%d unchanged=%d",
+                "event=dataset_import_completed status=completed "
+                "records=%d created=%d new_versions=%d unchanged=%d",
                 summary["received"],
                 summary["created"],
                 summary["new_versions"],
