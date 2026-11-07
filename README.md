@@ -119,6 +119,7 @@ ERROR cqa.errors error=DATABASE_UNAVAILABLE locations=backend/app/main.py:123
 - [Роадмап, ответственные, зависимости и критерии готовности](docs/ROADMAP.md)
 - [Задания для четырёх AI-агентов](docs/AGENT_TASKS.md)
 - [План функциональной проверки и оценки точности](docs/TEST_PLAN.md)
+- [Локальный пилот Qwen3.5 4B/9B: измерения и ограничения](docs/LOCAL_MODEL_PILOT.md)
 - [Обязательная проверка всех PR агентом Sol Extra high](docs/CODE_REVIEW.md)
 - [Принятые решения и журнал изменений плана](docs/DECISIONS.md)
 
