@@ -1,0 +1,18 @@
+{
+  "items": [
+    {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "external_id": "synthetic-ru-001",
+      "source": "upload",
+      "group_id": "UPLOAD",
+      "language": "RU",
+      "channel": "agent chat",
+      "current_transcript_version_id": "00000000-0000-4000-8000-000000000002",
+      "message_count": 4,
+      "latest_evaluation": null
+    }
+  ],
+  "total": 1,
+  "limit": 50,
+  "offset": 0
+}

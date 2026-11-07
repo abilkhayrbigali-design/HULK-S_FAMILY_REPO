@@ -1,0 +1,13 @@
+{
+  "action": "override",
+  "reason": "Синтетическое решение проверяющего: инструкция полная.",
+  "expected_revision": 0,
+  "applicability": "applicable",
+  "answer": 10,
+  "evidence": [
+    {
+      "kind": "message",
+      "message_id": "m0002"
+    }
+  ]
+}
