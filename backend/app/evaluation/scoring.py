@@ -2,8 +2,8 @@
 
 import logging
 from collections import defaultdict
-from collections.abc import Collection
-from decimal import ROUND_HALF_UP, Context, Decimal, localcontext
+from collections.abc import Collection, Iterable
+from decimal import MAX_EMAX, MIN_EMIN, ROUND_HALF_UP, Context, Decimal, localcontext
 from typing import Any, NamedTuple
 
 from app.evaluation.evidence import CriterionResult, EvaluationValidationError, validate_results
@@ -58,19 +58,32 @@ def _points(criterion: Criterion, result: CriterionResult, weight: Decimal) -> _
     return _Points(weight, _ONE if result.answer else _ZERO, _ONE)
 
 
-def _totals(rows: Collection[_Points]) -> tuple[Decimal, Decimal, Decimal | None]:
-    weight = sum((row.weight for row in rows), _ZERO)
-    if not weight:
-        return _ZERO, _ZERO, None
-
+def _base_ratio(rows: Collection[_Points]) -> tuple[Decimal, Decimal]:
     # Combine contributions as ratios, so even an exact half-cent from a
     # repeating scale fraction reaches ROUND_HALF_UP on the correct side.
-    numerator, denominator = _ZERO, _ONE
+    contributions = defaultdict(Decimal)
     for row in rows:
-        numerator = numerator * row.maximum + denominator * row.weight * row.answer
-        denominator *= row.maximum
-    total = (100 * numerator / (denominator * weight)).quantize(_CENT, rounding=ROUND_HALF_UP)
-    return numerator / denominator, weight, total
+        if row.answer:
+            contributions[row.maximum] += row.weight * row.answer
+    numerator, denominator = _ZERO, _ONE
+    for maximum, contribution in contributions.items():
+        numerator = numerator * maximum + denominator * contribution
+        denominator *= maximum
+    return numerator, denominator
+
+
+def _total(numerator: Decimal, denominator: Decimal, weight: Decimal) -> Decimal | None:
+    if not weight:
+        return None
+    return (100 * numerator / (denominator * weight)).quantize(_CENT, rounding=ROUND_HALF_UP)
+
+
+def _digit_span(values: Iterable[Decimal]) -> int:
+    integer_digits = fractional_digits = 0
+    for value in values:
+        integer_digits = max(integer_digits, value.adjusted() + 1)
+        fractional_digits = max(fractional_digits, -value.as_tuple().exponent)
+    return integer_digits + fractional_digits
 
 
 def _score(pairs: list[tuple[Criterion, CriterionResult]]) -> dict[str, Any]:
@@ -89,13 +102,13 @@ def _score(pairs: list[tuple[Criterion, CriterionResult]]) -> dict[str, Any]:
     rows = [points for _, _, points in weighted]
     # Bound the digit span of products/sums and leave room to distinguish
     # a quotient just below a rounding boundary. Ignore the caller's context.
-    span = sum(
-        max(value.adjusted() + 1, 0) + max(-value.as_tuple().exponent, 0)
-        for row in rows
-        for value in row
-    )
-    with localcontext(Context(prec=max(28, 2 * span + 12))):
-        _, applicable_weight, total = _totals(rows)
+    span = _digit_span(row.weight for row in rows) + _digit_span(row.answer for row in rows)
+    span += sum(_digit_span((maximum,)) for maximum in {row.maximum for row in rows})
+    span += len(str(len(rows)))
+    with localcontext(Context(prec=max(28, 2 * span + 12), Emax=MAX_EMAX, Emin=MIN_EMIN)):
+        applicable_weight = sum((row.weight for row in rows), _ZERO)
+        numerator, denominator = _base_ratio(rows)
+        total = _total(numerator, denominator, applicable_weight)
         criterion_scores = []
         for result, weight, row in weighted:
             numerator = row.weight * row.answer
@@ -115,13 +128,14 @@ def _score(pairs: list[tuple[Criterion, CriterionResult]]) -> dict[str, Any]:
             )
         section_scores = []
         for name, section_rows in sections.items():
-            base, weight, section_total = _totals(section_rows)
+            weight = sum((row.weight for row in section_rows), _ZERO)
+            numerator, denominator = _base_ratio(section_rows)
             section_scores.append(
                 {
                     "name": name,
-                    "base_points": base,
+                    "base_points": numerator / denominator,
                     "applicable_weight": weight,
-                    "total": section_total,
+                    "total": _total(numerator, denominator, weight),
                 }
             )
 

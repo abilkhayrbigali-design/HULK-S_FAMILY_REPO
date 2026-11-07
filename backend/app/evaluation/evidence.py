@@ -6,18 +6,23 @@ from typing import Annotated, Literal
 
 from pydantic import (
     BaseModel,
+    ConfigDict,
     Field,
     StrictBool,
+    StrictFloat,
     StrictInt,
     StringConstraints,
     TypeAdapter,
     ValidationError,
 )
 
-from app.schemas.data import CriteriaInput, Criterion, Number, Schema
+from app.schemas.data import CriteriaInput, Criterion, Schema
 
 MessageId = Annotated[str, StringConstraints(pattern=r"^m[0-9]{4,}$")]
 NonBlank = Annotated[str, StringConstraints(pattern=r"\S")]
+AnswerNumber = (
+    Annotated[StrictInt, Field(ge=0)] | Annotated[StrictFloat, Field(ge=0, allow_inf_nan=False)]
+)
 
 
 class EvaluationValidationError(ValueError):
@@ -28,21 +33,25 @@ class EvaluationValidationError(ValueError):
         super().__init__(code)
 
 
-class MessageEvidence(Schema):
+class _ProviderSchema(Schema):
+    model_config = ConfigDict(revalidate_instances="always")
+
+
+class MessageEvidence(_ProviderSchema):
     kind: Literal["message"]
     message_id: MessageId
 
 
-class RangeEvidence(Schema):
+class RangeEvidence(_ProviderSchema):
     kind: Literal["range"]
     start_message_id: MessageId
     end_message_id: MessageId
 
 
-class CriterionResult(Schema):
+class CriterionResult(_ProviderSchema):
     criterion_id: NonBlank
     applicability: Literal["applicable", "not_applicable"]
-    answer: StrictBool | Number | None
+    answer: StrictBool | AnswerNumber | None
     explanation: NonBlank
     evidence: Annotated[
         list[Annotated[MessageEvidence | RangeEvidence, Field(discriminator="kind")]],
@@ -77,7 +86,7 @@ def validate_results(
         checklist = CriteriaInput.model_validate({"criteria": criteria})
         snapshot = _TranscriptLocations.model_validate(transcript_snapshot)
         results = _RESULTS.validate_python(criterion_results)
-    except ValidationError:
+    except (ValidationError, OverflowError):
         raise EvaluationValidationError("INVALID_ASSESSMENT_INPUT") from None
 
     if snapshot.id != transcript_version_id:
@@ -97,7 +106,10 @@ def validate_results(
     for criterion in checklist.criteria:
         result = by_id[criterion.id]
         _validate_answer(criterion, result)
-        _validate_evidence(result, positions, operators)
+        reports_gross_error = (
+            criterion.type == "flag" and criterion.id == "gross_errors" and result.answer is True
+        )
+        _validate_evidence(result, positions, operators, reports_gross_error)
         pairs.append((criterion, result))
     return pairs
 
@@ -119,7 +131,10 @@ def _validate_answer(criterion: Criterion, result: CriterionResult) -> None:
 
 
 def _validate_evidence(
-    result: CriterionResult, positions: dict[str, int], operators: list[int]
+    result: CriterionResult,
+    positions: dict[str, int],
+    operators: list[int],
+    reports_gross_error: bool,
 ) -> None:
     cites_operator = False
     for item in result.evidence:
@@ -135,6 +150,6 @@ def _validate_evidence(
         index = bisect_left(operators, start)
         cites_operator |= index < len(operators) and operators[index] <= end
 
-    # Context may supplement evidence for an action, but cannot establish it on its own.
-    if result.answer and not cites_operator:
+    # Unlike custom answers, this flag specifically asserts an operator's action.
+    if reports_gross_error and not cites_operator:
         raise EvaluationValidationError("MISSING_OPERATOR_EVIDENCE")

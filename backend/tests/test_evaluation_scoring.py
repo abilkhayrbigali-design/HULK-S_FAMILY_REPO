@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from jsonschema import Draft202012Validator
 
-from app.evaluation.evidence import EvaluationValidationError
+from app.evaluation.evidence import CriterionResult, EvaluationValidationError
 from app.evaluation.scoring import build_assessment
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -155,6 +155,69 @@ def test_half_up_on_repeating_fraction_and_unnamed_section(
     assert assessment["criteria"][0]["criterion_id"] == binary["id"]
 
 
+def test_repeated_large_scale_maxima(request_data):
+    criterion = request_data["criteria"][1]
+    criterion["scale"] = [
+        {"value": 5e307, "description": "Partial"},
+        {"value": 1e308, "description": "Full"},
+    ]
+    ids = [f"custom-{index}" for index in range(3247)]
+    request_data["criteria"] = [dict(criterion, id=criterion_id, weight=1) for criterion_id in ids]
+    request_data["criterion_results"] = [
+        criterion_result(criterion_id, 5e307) for criterion_id in ids
+    ]
+    assessment = build_assessment(**request_data)
+    assert assessment["total"] == Decimal("50.00")
+    assert assessment["sections"][0]["base_points"] == Decimal("1623.5")
+
+
+def test_custom_scale_can_score_an_unanswered_conversation(request_data):
+    criterion = request_data["criteria"][1]
+    criterion["scale"] = [
+        {"value": 1, "description": "Operator did not reply"},
+        {"value": 5, "description": "Complete reply"},
+    ]
+    request_data["criteria"] = [criterion]
+    request_data["transcript_snapshot"]["messages"] = request_data["transcript_snapshot"][
+        "messages"
+    ][:1]
+    result = criterion_result(criterion["id"], 1)
+    result["evidence"][0]["end_message_id"] = "m0001"
+    request_data["criterion_results"] = [result]
+    assert build_assessment(**request_data)["total"] == Decimal("20.00")
+
+
+@pytest.mark.parametrize("change", ["answer", "evidence", "nested_evidence"])
+def test_typed_results_are_revalidated_after_appeal_changes(request_data, change):
+    rows = request_data["criterion_results"]
+    result = CriterionResult.model_validate(rows[1])
+    changes = {
+        "answer": {"answer": "5"},
+        "evidence": {"evidence": []},
+        "nested_evidence": {
+            "evidence": [result.evidence[0].model_copy(update={"message_id": "bad"})]
+        },
+    }
+    rows[1] = result.model_copy(update=changes[change])
+    with pytest.raises(EvaluationValidationError, match="^INVALID_ASSESSMENT_INPUT$"):
+        build_assessment(**request_data)
+
+
+@pytest.mark.parametrize("field", ["weight", "answer"])
+def test_oversized_json_integer_fails_safely(request_data, field, caplog):
+    if field == "weight":
+        request_data["criteria"][1]["weight"] = 10**309
+        code = "INVALID_ASSESSMENT_INPUT"
+    else:
+        request_data["criterion_results"][1]["answer"] = 10**309
+        code = "INVALID_SCALE_STEP"
+    with pytest.raises(EvaluationValidationError, match=f"^{code}$"):
+        build_assessment(**request_data)
+    assert caplog.record_tuples == [
+        ("cqa.evaluation", logging.WARNING, f"event=assessment_rejected error={code}")
+    ]
+
+
 @pytest.mark.parametrize(
     ("index", "applicability", "answer", "code"),
     [
@@ -211,7 +274,6 @@ def test_requires_exact_criterion_coverage(request_data, change, code):
             [{"kind": "range", "start_message_id": "m0004", "end_message_id": "m0001"}],
             "REVERSED_EVIDENCE_RANGE",
         ),
-        ([{"kind": "message", "message_id": "m0001"}], "MISSING_OPERATOR_EVIDENCE"),
         (
             [{"kind": "message", "message_id": "m0002", "quote": "invented"}],
             "INVALID_ASSESSMENT_INPUT",
@@ -222,6 +284,14 @@ def test_requires_exact_criterion_coverage(request_data, change, code):
 def test_invalid_evidence(request_data, evidence, code):
     request_data["criterion_results"][0]["evidence"] = evidence
     with pytest.raises(EvaluationValidationError, match=f"^{code}$"):
+        build_assessment(**request_data)
+
+
+def test_gross_error_requires_evidence_of_operator_action(request_data):
+    request_data["criteria"][-1]["id"] = "gross_errors"
+    request_data["criterion_results"][-1] = criterion_result("gross_errors", True)
+    request_data["criterion_results"][-1]["evidence"] = [{"kind": "message", "message_id": "m0001"}]
+    with pytest.raises(EvaluationValidationError, match="^MISSING_OPERATOR_EVIDENCE$"):
         build_assessment(**request_data)
 
 
