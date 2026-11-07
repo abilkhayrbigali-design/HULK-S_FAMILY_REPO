@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "CONFLICT",
+    "message": "Resource version or state conflict.",
+    "details": []
+  }
+}

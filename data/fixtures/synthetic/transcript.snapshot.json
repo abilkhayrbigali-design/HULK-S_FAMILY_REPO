@@ -1,0 +1,36 @@
+{
+  "id": "00000000-0000-4000-8000-000000000002",
+  "conversation_id": "00000000-0000-4000-8000-000000000001",
+  "language": "RU",
+  "channel": "agent chat",
+  "messages": [
+    {
+      "id": "m0001",
+      "position": 1,
+      "timestamp": "00:01",
+      "speaker": "client",
+      "text": "Где найти справку?"
+    },
+    {
+      "id": "m0002",
+      "position": 2,
+      "timestamp": "00:03",
+      "speaker": "operator",
+      "text": "Здравствуйте! Меня зовут Алия. Справка находится в разделе «Документы»."
+    },
+    {
+      "id": "m0003",
+      "position": 3,
+      "timestamp": "00:05",
+      "speaker": "client",
+      "text": "Спасибо, нашёл."
+    },
+    {
+      "id": "m0004",
+      "position": 4,
+      "timestamp": "00:07",
+      "speaker": "operator",
+      "text": "Рада помочь. До свидания!"
+    }
+  ]
+}
