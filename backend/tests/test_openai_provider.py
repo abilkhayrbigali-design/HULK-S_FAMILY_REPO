@@ -201,6 +201,24 @@ async def test_paid_invalid_response_repair_counts_both_attempts(
 
 
 @pytest.mark.anyio
+async def test_plain_text_response_retains_openai_repair_behavior(provider_with, snapshots, caplog):
+    calls = []
+
+    def handle(request):
+        calls.append(json.loads(request.content))
+        return httpx.Response(200, text=MARKER) if len(calls) == 1 else response()
+
+    async with provider_with(handle, CQA_LLM_MAX_RETRIES=1) as (provider, _):
+        result = await provider.evaluate(*snapshots, adapter.PROMPT_VERSION)
+    assert len(calls) == result.usage.request_count == 2
+    assert "previous response failed validation" in calls[1]["instructions"]
+    assert result.model_reported == "gpt-6-luna-synthetic-snapshot"
+    assert result.usage.total_tokens is None
+    assert "event=provider_retry attempt=1 error=AI_INVALID_RESULT" in caplog.text
+    assert MARKER not in caplog.text
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize(
     "status,code", [(408, "AI_TIMEOUT"), (429, "AI_RATE_LIMIT"), (503, "AI_UPSTREAM_ERROR")]
 )

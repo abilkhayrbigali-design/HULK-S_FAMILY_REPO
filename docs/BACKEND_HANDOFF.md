@@ -101,25 +101,40 @@ usage и стоимость остаются неизвестными. Worker с
 до завершения lifespan приложения и остановки worker.
 
 ```python
+import asyncio
+
+import uvicorn
+
 from app.config import Settings
 from app.evaluation.ollama_provider import PROMPT_VERSION, OllamaSettings, ollama_provider
 from app.main import create_app
 
-async with ollama_provider(OllamaSettings()) as provider:
-    app = create_app(Settings(), provider=provider, prompt_version=PROMPT_VERSION)
-    # Сервер обслуживает app до выхода из этого контекста.
+
+async def serve():
+    async with ollama_provider(OllamaSettings()) as provider:
+        app = create_app(Settings(), provider=provider, prompt_version=PROMPT_VERSION)
+        server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=8000, access_log=False))
+        await server.serve()
+
+
+if __name__ == "__main__":
+    asyncio.run(serve())
 ```
 
 Настройки читаются из окружения процесса. По умолчанию `OLLAMA_BASE_URL` —
 `http://127.0.0.1:11434`, `OLLAMA_MODEL` — `qwen3.5:9b-q4_K_M`,
 `OLLAMA_TIMEOUT_SECONDS` — 120 секунд на попытку, `OLLAMA_MAX_RETRIES` — 1
-(разрешено от 0 до 3). Указывайте доверенный сервер Ollama с локальной моделью.
-Для отключения облачных функций установите `OLLAMA_NO_CLOUD=1` в окружении
-**сервера Ollama** перед его запуском. [Настройки Ollama](https://docs.ollama.com/faq#how-do-i-disable-ollamas-cloud-features)
+(разрешено от 0 до 3). Для локальной обработки укажите доверенный сервер
+Ollama с загруженной локальной моделью. Обязательно задайте `OLLAMA_NO_CLOUD=1`
+в окружении **сервера Ollama** и перезапустите его перед передачей данных.
+Этот флаг нужен и для локальных имён, которые могут ссылаться на удалённую
+модель. [Настройки Ollama](https://docs.ollama.com/faq#how-do-i-disable-ollamas-cloud-features)
 
 Запрос использует `think=false`, `num_ctx=16384` и отключает усечение и
-сдвиг контекста. Нужен сервер с поддержкой этих параметров и JSON Schema
-в `/api/chat`. Принимается завершённый ответ с `done_reason=stop`, прошедший
+сдвиг контекста. Последовательности ChatML и маркеры изображений внутри
+пользовательских данных передаются как JSON-экранированный текст.
+Нужен сервер с поддержкой этих параметров и JSON Schema в `/api/chat`.
+Принимается завершённый ответ с `done_reason=stop`, прошедший
 проверку N-02. Невалидные оценки отклоняются. Повторы предусмотрены при
 сетевой ошибке, таймауте и HTTP 408, 429 или 5xx. Диагностика
 `provider_started`, `provider_retry`, `provider_completed` и `provider_failed`

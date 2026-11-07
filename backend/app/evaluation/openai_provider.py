@@ -152,7 +152,7 @@ class OpenAIProvider:
                 attempts.record()
                 self._fail("AI_SDK_ERROR", attempts)
             else:
-                attempts.record(_token_counts(response), response.model)
+                attempts.record(_token_counts(response), getattr(response, "model", None))
                 try:
                     if _refused(response):
                         self._fail("AI_REFUSAL", attempts)

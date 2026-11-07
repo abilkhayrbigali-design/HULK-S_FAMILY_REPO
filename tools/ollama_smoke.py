@@ -14,7 +14,6 @@ from app.evaluation.ollama_provider import (
     OllamaSettings,
     ollama_provider,
 )
-from app.main import create_app
 
 FIXTURES = Path(__file__).resolve().parents[1] / "data/fixtures/synthetic"
 
@@ -35,6 +34,8 @@ async def _api(app):
 
 
 async def _smoke(database, local):
+    from app.main import create_app
+
     config = Settings(
         _env_file=None,
         CQA_DATABASE_URL=f"sqlite:///{database.as_posix()}",

@@ -8,7 +8,7 @@ from typing import Annotated, Never
 from urllib.parse import urlsplit
 
 import httpx
-from pydantic import Field, StringConstraints, ValidationError, field_validator
+from pydantic import Field, StringConstraints, TypeAdapter, ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.evaluation.evidence import EvaluationValidationError
@@ -20,11 +20,13 @@ from app.evaluation.provider_protocol import (
     snapshot_payload,
     validated_output,
 )
+from app.schemas.data import Text
 from app.schemas.urls import valid_http_url
 from app.services.evaluation_worker import ProviderFailure
 
 logger = logging.getLogger("cqa.evaluation")
 PROMPT_VERSION = "cqa-ollama-operator-v1"
+_REPORTED_MODEL = TypeAdapter(Text | None)
 
 
 class OllamaSettings(BaseSettings):
@@ -45,11 +47,23 @@ class OllamaSettings(BaseSettings):
     @classmethod
     def validate_origin(cls, value: str) -> str:
         if (
-            not valid_http_url(value, allow_fragment=False)
-            or "?" in value
-            or urlsplit(value).path not in ("", "/")
+            valid_http_url(value, allow_fragment=False)
+            and "?" not in value
+            and "\\" not in value
+            and urlsplit(value).path in ("", "/")
         ):
-            raise ValueError("Ollama requires an HTTP(S) origin")
+            try:
+                if httpx.URL(value).path == "/":
+                    return value
+            except httpx.InvalidURL:
+                pass
+        raise ValueError("Ollama requires an HTTP(S) origin")
+
+    @field_validator("model")
+    @classmethod
+    def validate_local_model(cls, value: str) -> str:
+        if value.lower().endswith((":cloud", "-cloud")):
+            raise ValueError("Ollama requires a local model")
         return value
 
 
@@ -74,9 +88,16 @@ def _usage(body):
 def _body(response):
     try:
         body = response.json()
-    except ValueError:
+    except (ValueError, RecursionError):
         return {}
     return body if isinstance(body, dict) else {}
+
+
+def _reported_model(body):
+    try:
+        return _REPORTED_MODEL.validate_python(body.get("model"), strict=True)
+    except ValidationError:
+        return None
 
 
 class OllamaProvider:
@@ -94,6 +115,10 @@ class OllamaProvider:
             content = snapshot_payload(transcript_snapshot, checklist_snapshot)
         except (KeyError, TypeError, ValueError):
             self._fail("OLLAMA_INVALID_SNAPSHOT", attempts)
+        # Keep model control tokens and image markers out of the raw user data.
+        content = (
+            content.replace("<", r"\u003c").replace(">", r"\u003e").replace("[img-", r"\u005bimg-")
+        )
         request = {
             "model": self._settings.model,
             "messages": [
@@ -115,12 +140,15 @@ class OllamaProvider:
             except (httpx.TimeoutException, TimeoutError):
                 attempts.record()
                 code = "OLLAMA_TIMEOUT"
+            except httpx.DecodingError:
+                attempts.record()
+                self._fail("OLLAMA_INVALID_RESPONSE", attempts)
             except httpx.TransportError:
                 attempts.record()
                 code = "OLLAMA_UNAVAILABLE"
             else:
                 body = _body(response)
-                attempts.record(_usage(body), body.get("model"))
+                attempts.record(_usage(body), _reported_model(body))
                 if response.status_code in (408, 429) or 500 <= response.status_code < 600:
                     code = "OLLAMA_UPSTREAM_ERROR"
                 elif response.status_code != 200:
