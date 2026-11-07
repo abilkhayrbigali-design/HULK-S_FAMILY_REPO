@@ -85,6 +85,13 @@ function EditorForm({ initial }: { initial?: ChecklistDetail }) {
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const allowNavigation = useRef(false);
   const [error, setError] = useState<unknown>();
   const [validation, setValidation] = useState<string[]>([]);
@@ -165,6 +172,9 @@ function EditorForm({ initial }: { initial?: ChecklistDetail }) {
       const version = initial
         ? await api.saveVersion(initial.id, expected, parsed.data)
         : await api.createChecklist(name.trim(), parsed.data);
+      // A POST may commit after the user confirms leaving. Do not navigate
+      // back or update a discarded editor when its response arrives.
+      if (!mounted.current) return;
       setDirty(false);
       setLatest(undefined);
       setExpected(version.version_number);
@@ -179,10 +189,10 @@ function EditorForm({ initial }: { initial?: ChecklistDetail }) {
           `Версия ${version.version_number} сохранена. Предыдущие версии не изменены.`,
         );
     } catch (e) {
-      setError(e);
+      if (mounted.current) setError(e);
     } finally {
       busyRef.current = false;
-      setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   }
   async function loadLatest() {
@@ -567,7 +577,9 @@ function EditorForm({ initial }: { initial?: ChecklistDetail }) {
           <p>
             {confirmReplace
               ? "Заменить ваш черновик актуальными правилами? Введённые изменения будут потеряны."
-              : "Покинуть редактор? Несохранённые изменения будут потеряны."}
+              : busy
+                ? "Сохранение уже отправлено и может завершиться после ухода. Проверьте список чек-листов перед повторным созданием. Покинуть редактор?"
+                : "Покинуть редактор? Несохранённые изменения будут потеряны."}
           </p>
           <div className="inline">
             <button

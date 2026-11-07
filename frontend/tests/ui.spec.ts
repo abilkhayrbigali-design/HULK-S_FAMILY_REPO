@@ -555,3 +555,109 @@ test("unexpected render error shows safe fallback without logging Error content"
   ).toBe(true);
   expect(logs.map((l) => l.text).join()).not.toContain("SYNTHETIC_SECRET");
 });
+
+test("timeout while reading a successful response body stays TIMEOUT, not a schema error", async ({
+  page,
+}) => {
+  const logs = captureLogs(page);
+  await page.goto("/?mode=mock");
+  const result = await page.evaluate(async () => {
+    const path = "/src/api/client.ts";
+    const { ApiClient } = await import(path);
+    let calls = 0;
+    const client = new ApiClient((_path: string, init: RequestInit) => {
+      calls++;
+      const body = new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{"group_id":'));
+          init.signal!.addEventListener(
+            "abort",
+            () =>
+              controller.error(
+                new DOMException("SYNTHETIC_SECRET", "AbortError"),
+              ),
+            { once: true },
+          );
+        },
+      });
+      return Promise.resolve(new Response(body, { status: 200 }));
+    }, 20);
+    try {
+      await client.importGroup("SYNTHETIC_SECRET");
+      return { calls, code: "unexpected_success", message: "" };
+    } catch (e) {
+      const safe = e as { code: string; message: string };
+      return { calls, code: safe.code, message: safe.message };
+    }
+  });
+  expect(result.calls).toBe(1);
+  expect(result.code).toBe("TIMEOUT");
+  expect(result.message).toContain("Проверьте результат операции");
+  expect(
+    logs.filter(
+      (l) => l.text === "cqa.ui event=import_failed status=0 error=TIMEOUT",
+    ),
+  ).toHaveLength(1);
+  expect(logs.map((l) => l.text).join()).not.toContain("SYNTHETIC_SECRET");
+});
+
+test("late create completion never navigates back after confirmed departure", async ({
+  page,
+}) => {
+  await routeApi(page);
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let received!: () => void;
+  const started = new Promise<void>((resolve) => {
+    received = resolve;
+  });
+  await page.route("**/api/v1/checklists", async (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    received();
+    await pending;
+    await route.fallback();
+  });
+  await page.goto("/checklists/new?mode=api");
+  await page
+    .getByLabel("Название чек-листа", { exact: true })
+    .fill("Отложенное создание");
+  await criterion(page, 1)
+    .getByLabel("Название критерия")
+    .fill("Свой критерий");
+  await criterion(page, 1)
+    .getByLabel("Инструкция для оценки")
+    .fill("Проверьте ответ.");
+  await page
+    .getByRole("button", { name: "Создать чек-лист", exact: true })
+    .click();
+  await started;
+  await page
+    .getByRole("navigation")
+    .getByRole("link", { name: "Диалоги", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toContainText(
+    "может завершиться после ухода",
+  );
+  await page.getByRole("button", { name: "Покинуть редактор" }).click();
+  await expect(page).toHaveURL(/\/conversations$/);
+  const done = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/v1/checklists") &&
+      response.request().method() === "POST",
+  );
+  release();
+  await done;
+  await expect(
+    page.getByRole("heading", { name: "Каждый диалог — в деталях" }),
+  ).toBeVisible();
+  await expect(page).toHaveURL(/\/conversations$/);
+  await page
+    .getByRole("navigation")
+    .getByRole("link", { name: "Чек-листы", exact: true })
+    .click();
+  await expect(
+    page.getByRole("link", { name: /Отложенное создание/ }),
+  ).toBeVisible();
+});

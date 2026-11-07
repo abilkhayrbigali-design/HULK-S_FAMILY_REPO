@@ -49,8 +49,12 @@ export class ApiClient {
       let raw: unknown;
       try {
         raw = await response.json();
-      } catch {
-        throw new ApiError("INVALID_RESPONSE", response.status);
+      } catch (error) {
+        // Only malformed JSON is a contract error. A body stream may still
+        // fail after headers have arrived; preserve cancellation/network errors.
+        if (error instanceof SyntaxError && !controller.signal.aborted)
+          throw new ApiError("INVALID_RESPONSE", response.status);
+        throw error;
       }
       if (!response.ok) {
         const error = z
@@ -72,12 +76,11 @@ export class ApiClient {
       return parsed.data;
     } catch (error) {
       if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
-      const safe =
-        error instanceof ApiError
+      const safe = controller.signal.aborted
+        ? new ApiError("TIMEOUT")
+        : error instanceof ApiError
           ? error
-          : new ApiError(
-              controller.signal.aborted ? "TIMEOUT" : "NETWORK_ERROR",
-            );
+          : new ApiError("NETWORK_ERROR");
       logEvent(`${operation}_failed` as Event, safe.status, safe.code);
       throw safe;
     } finally {
