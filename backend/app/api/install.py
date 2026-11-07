@@ -6,11 +6,12 @@ from fastapi.exceptions import RequestValidationError
 from sqlalchemy.exc import IntegrityError, OperationalError
 
 from app.api.routes.data import router
+from app.api.routes.evaluations import router as evaluations_router
 from app.diagnostics import log_internal_error
 from app.services.errors import ServiceError
 
 
-def install_data_api(app, session_factory, *, dataset_url="", error_response=None):
+def install_data_api(app, session_factory=None, *, dataset_url="", error_response=None):
     if error_response is None:
         # Import when wiring the app: main may import this installer before defining helpers.
         from app.main import error_response
@@ -22,6 +23,7 @@ def install_data_api(app, session_factory, *, dataset_url="", error_response=Non
     for name in ("httpx", "httpx2", "httpcore"):
         logging.getLogger(name).setLevel(logging.CRITICAL)
     app.include_router(router)
+    app.include_router(evaluations_router)
 
     @app.exception_handler(ServiceError)
     async def service_error(request, exc):

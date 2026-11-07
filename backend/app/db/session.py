@@ -27,6 +27,8 @@ def session_factory(engine):
 
     @event.listens_for(factory, "after_commit")
     def log_saved_operations(session):
+        for journal, operation in session.info.pop("cqa_saved_events", ()):
+            logging.getLogger(journal).info("event=%s", operation)
         summary = session.info.pop("cqa_import_summary", None)
         if summary is not None:
             logging.getLogger("cqa.import").info(
@@ -45,7 +47,12 @@ def session_factory(engine):
 
     @event.listens_for(factory, "after_rollback")
     def discard_saved_operations(session):
+        session.info.pop("cqa_saved_events", None)
         session.info.pop("cqa_import_summary", None)
         session.info.pop("cqa_checklist_versions", None)
 
     return factory
+
+
+def log_after_commit(session, journal, operation):
+    session.info.setdefault("cqa_saved_events", []).append((journal, operation))

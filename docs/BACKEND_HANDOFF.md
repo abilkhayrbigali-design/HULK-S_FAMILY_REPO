@@ -4,36 +4,44 @@
 редактор версий, JSON/HTTP-импорт, список и карточка диалогов.
 В C-07 ветка синхронизирована с текущим `origin/main` (ea6ff60): каркас,
 настройки и manifest/lock получены без изменений реализации Абулхаира.
-Автоматическое подключение бизнес-маршрутов в `create_app` ещё не выполнено;
-готовые модули подключаются через вход ниже. Worker/AI и апелляции отсутствуют.
+Готовы маршруты оценок и апелляций, а также SQLite-очередь с внедряемым
+провайдером. Точки подключения к `create_app` и N-01 приведены ниже.
 
 ## Подключение к серверному каркасу
 
 ```python
 from app.api.install import install_data_api
 from app.db.migrate import migrate
-from app.db.session import make_engine, session_factory
-from app.main import error_response
+from app.db.session import session_factory
+from app.services.evaluation_worker import evaluation_worker
 from app.services.seed import seed
 
-# Каталог БД должен существовать. URL и подписанная ссылка приходят из config.
-database_url = settings.sqlalchemy_url.render_as_string(hide_password=False)
-migrate(database_url)
-engine = make_engine(database_url)
-sessions = session_factory(engine)
-with sessions.begin() as session:
-    seed(session)
-install_data_api(
-    app, sessions,
-    dataset_url=settings.dataset_api_url.get_secret_value(),
-    error_response=error_response,
-)
+# После создания приложения и до начала lifespan.
+install_data_api(app, dataset_url=settings.dataset_api_url.get_secret_value())
+
+# Внутри существующего lifespan после создания application.state.engine.
+migrate(engine=application.state.engine)
+sessions = session_factory(application.state.engine)
+with sessions.begin() as db:
+    seed(db)
+async with evaluation_worker(
+    application,
+    sessions,
+    provider,
+    concurrency=settings.evaluation_concurrency,
+    prompt_version=prompt_version,
+):
+    yield
 ```
 
-Пример согласован с текущим A-01 (`origin/main` ea6ff60): относительный путь
-разрешается настройками от корня репозитория, подписанный URL извлекается из
-SecretStr только на сервере. Не выводите URL в журнал. Миграцию/seed выполнить
-перед приёмом запросов, engine.dispose() — при остановке. `/health` уже реализован
+Абулхаир передаёт `provider` после проверки `settings.require_llm()` и создания
+реального адаптера N-01. При отсутствующем ключе или адаптере передаётся `None`.
+Тогда новый POST возвращает 503, а оставшиеся queued завершаются с
+`AI_NOT_CONFIGURED`. Вызов `install_data_api` выполняется один раз.
+Миграция `c002` использует тот же engine, worker завершается до `engine.dispose()`.
+При штатной остановке worker дожидается уже захваченных задач. Провайдер
+обеспечивает конечный таймаут и ограниченные повторы согласно N-01/N-05.
+Подписанная ссылка извлекается из SecretStr только на сервере. `/health` реализован
 интегратором. `install_data_api` использует `app.main.error_response` (по умолчанию
 либо переданный явно), включая код в HTTP-сводке; диагностика переиспользует
 `app.diagnostics.log_internal_error`. Локальные fallback-обработчики удалены
@@ -77,16 +85,34 @@ make check
 ## Оставшаяся работа
 
 - C-01: подключить модули к A-01, согласовать схемы ответов/OpenAPI в A-02.
-- C-02: таблицы/маршруты evaluations, worker, восстановление очереди и подключение
-  реального `evaluation.pipeline`; `latest_evaluation` пока всегда null.
+- C-02: подтвердить подключение реального провайдера N-01 в A-03. Маршруты,
+  `latest_evaluation`, worker и восстановление проверяются с тестовым провайдером.
 - C-03: подтвердить использование новой версии в реальном AI-запуске.
-- C-04: апелляции, атомарные решения/revision и пересчёт через N-02.
-- C-05: тесты состояния worker, исходного результата и гонок решений после
-  реализации C-02/C-04. Текущие тесты покрывают данные, импорт и версии.
+- C-05: подтвердить сценарии на интегрированной сборке с N-01. Тесты SQLite/API
+  покрывают данные, импорт, версии, восстановление и гонку решений.
 
 Общий API-контракт не менялся. Для полей метаданных чек-листа выбраны
 `current_version_number`, `current_version_id`, `versions`, `current_version`;
 A-02 должен закрепить эти имена в общих контрактных примерах и клиенте.
+
+## Контракт провайдера и диагностика
+
+`await provider.evaluate(transcript_snapshot, checklist_snapshot, prompt_version)`
+возвращает словарь или модель ProviderResult. Провайдер получает отдельные копии
+снимков. Опциональный `estimated_cost_usd` дополняет внутренний результат, если
+тариф известен. При ошибке адаптер может поднять `ProviderFailure(metadata)`
+из `app.services.evaluation_worker` с доступными полями provenance. Иначе
+usage и стоимость остаются неизвестными. Worker сохраняет известный provenance
+до N-02. Аварийное завершение во время самого сетевого вызова сохраняет только
+уже записанные данные. Контракт запросов и ответов HTTP сохраняется.
+
+`cqa.worker` пишет `evaluation_queued`, `evaluation_started`,
+`evaluation_completed`, `evaluation_failed` и агрегат `evaluations_interrupted`.
+`cqa.appeals` пишет `appeal_created` и `appeal_decision_saved` после commit,
+а при повторном решении или устаревшей revision пишет `appeal_conflict`.
+Невалидное доказательство воспроизводит `AI_INVALID_RESULT`, ошибка
+тестового провайдера — `AI_PROVIDER_ERROR`. Тесты проверяют уровни, коды,
+сохранённый статус и отсутствие приватного маркера в журнале.
 
 ## Результат ревью C-06
 
