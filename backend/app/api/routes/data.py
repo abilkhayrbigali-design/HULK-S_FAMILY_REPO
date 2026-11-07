@@ -20,6 +20,9 @@ router = APIRouter(prefix="/api/v1")
 def session(request: Request):
     with request.app.state.session_factory() as db:
         with db.begin():
+            # SQLite legacy SELECT does not start a snapshot for multi-query views.
+            if request.method == "GET":
+                db.connection().exec_driver_sql("BEGIN")
             yield db
 
 
@@ -31,7 +34,11 @@ Offset = Annotated[int, Query(ge=0)]
 def page(db, statement, limit, offset, convert):
     total = db.scalar(select(func.count()).select_from(statement.subquery()))
     return dict(
-        items=[convert(row) for row in db.scalars(statement.limit(limit).offset(offset))],
+        items=(
+            [convert(row) for row in db.scalars(statement.limit(limit).offset(offset))]
+            if offset < total
+            else []
+        ),
         total=total,
         limit=limit,
         offset=offset,

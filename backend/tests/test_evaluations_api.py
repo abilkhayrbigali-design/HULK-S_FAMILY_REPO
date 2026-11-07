@@ -10,17 +10,21 @@ from threading import Barrier, Event
 from time import monotonic, sleep
 
 import pytest
+from alembic.config import Config
 from fastapi.testclient import TestClient
 from jsonschema import Draft202012Validator
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import event, select, text
 from sqlalchemy.exc import IntegrityError, OperationalError
 
+from alembic import command
 from app.api.install import install_data_api
 from app.config import Settings
 from app.db.migrate import migrate
 from app.db.session import session_factory
-from app.main import create_app
+from app.main import build_engine, create_app
 from app.models.evaluations import AppealDecision, Evaluation
+from app.services import evaluations
 from app.services.evaluation_worker import ProviderFailure, evaluation_worker
 
 API = "/api/v1"
@@ -66,6 +70,16 @@ def provider_result(checklist):
     }
 
 
+class AdapterCriterion(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+
+class AdapterResult(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    criterion_results: list[AdapterCriterion]
+
+
 class FakeProvider:
     def __init__(self, mode="success", gate=None):
         self.mode = mode
@@ -83,9 +97,15 @@ class FakeProvider:
             raise ProviderFailure(result)
         if self.mode == "bad_evidence":
             result["criterion_results"][0]["evidence"][0]["message_id"] = "m9999"
+        if self.mode == "bad_reasons":
+            result["review_reasons"] = [None]
+        if self.mode == "missing_reasons":
+            del result["review_reasons"]
         if self.mode == "mutates_snapshot":
             transcript_snapshot["messages"][0]["id"] = "m9999"
             result["criterion_results"][0]["evidence"][0]["message_id"] = "m9999"
+        if self.mode == "typed":
+            return AdapterResult.model_validate(result)
         return result
 
 
@@ -211,7 +231,7 @@ def test_queued_restart_pins_versions_and_preserves_decimal(app_for, caplog):
         )
         assert changed.status_code == 201
 
-    provider = FakeProvider()
+    provider = FakeProvider("typed")
     app = app_for(provider)
     with TestClient(app) as client:
         result = wait_for(client, pending["id"], "completed", "failed")
@@ -313,6 +333,8 @@ def test_concurrency_and_database_writes_during_provider_calls(app_for):
         ("failure", "AI_PROVIDER_ERROR", False),
         ("known_usage_failure", "AI_PROVIDER_ERROR", True),
         ("bad_evidence", "AI_INVALID_RESULT", True),
+        ("bad_reasons", "AI_INVALID_RESULT", True),
+        ("missing_reasons", "AI_INVALID_RESULT", True),
         ("mutates_snapshot", "AI_INVALID_RESULT", True),
     ],
 )
@@ -353,6 +375,46 @@ def test_missing_provider_rejects_new_launches_and_fails_persisted_queue(app_for
         assert rejected.json()["error"]["code"] == "AI_NOT_CONFIGURED"
         assert wait_for(client, pending["id"], "failed")["error"]["code"] == "AI_NOT_CONFIGURED"
         assert client.get(f"{API}/evaluations").json()["total"] == 1
+
+
+def test_evaluation_validation_errors_match_contract(app_for):
+    with TestClient(app_for()) as client:
+        responses = [
+            client.get(f"{API}/evaluations/{SECRET}"),
+            client.get(f"{API}/appeals?evaluation_id={SECRET}"),
+            client.post(f"{API}/evaluations", json={SECRET: SECRET}),
+        ]
+        for response in responses:
+            assert response.status_code == 422
+            check_schema("Error", response.json())
+            assert SECRET not in response.text
+        assert client.get(f"{API}/evaluations?offset={10**30}").json()["items"] == []
+
+
+@pytest.mark.parametrize("phase", ["provenance", "completed"])
+def test_transient_worker_write_failure_preserves_usage_without_repeating_provider(
+    app_for, monkeypatch, caplog, phase
+):
+    provider = FakeProvider()
+    save = evaluations.update_running
+    failures_left = 2
+
+    def transient(sessions, evaluation_id, **values):
+        nonlocal failures_left
+        if failures_left and (phase in values or values.get("status") == phase):
+            failures_left -= 1
+            raise OperationalError(SECRET, {}, RuntimeError(SECRET))
+        return save(sessions, evaluation_id, **values)
+
+    monkeypatch.setattr(evaluations, "update_running", transient)
+    with TestClient(app_for(provider)) as client:
+        conversation, checklist = data(client)
+        job = enqueue(client, conversation, checklist)
+        result = wait_for(client, job["id"], "completed")
+        assert result["provenance"]["usage"]["request_count"] == 2
+        assert len(provider.calls) == 1
+    assert SECRET not in caplog.text
+    assert caplog.text.count("event=evaluation_write_retry error=DATABASE_UNAVAILABLE") == 1
 
 
 def open_appeal(client, evaluation_id, criterion_id):
@@ -485,3 +547,96 @@ def test_decision_commit_failure_rolls_back_without_success_log(app_for, caplog)
         assert "event=appeal_decision_saved" not in caplog.text
         errors = [record for record in caplog.records if record.name == "cqa.errors"]
         assert len(errors) == 1 and errors[0].levelname == "ERROR"
+
+
+def test_appeal_read_is_coherent_during_decision(app_for):
+    app = app_for(FakeProvider())
+    with TestClient(app) as client:
+        conversation, checklist = data(client)
+        job = enqueue(client, conversation, checklist)
+        wait_for(client, job["id"], "completed")
+        appeal = open_appeal(client, job["id"], "scale").json()
+        reading, release = Event(), Event()
+
+        def pause_before_reading_decision(_conn, _cursor, statement, *_args):
+            if "FROM appeal_decisions" in statement and not reading.is_set():
+                reading.set()
+                assert release.wait(timeout=8)
+
+        engine = app.state.engine
+        event.listen(engine, "before_cursor_execute", pause_before_reading_decision)
+        try:
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                pending = pool.submit(client.get, f"{API}/appeals/{appeal['id']}")
+                try:
+                    assert reading.wait(timeout=8)
+                    result = decide(
+                        client,
+                        appeal["id"],
+                        action="confirm",
+                        reason="Synthetic",
+                        expected_revision=0,
+                    )
+                    assert result.status_code == 200
+                finally:
+                    release.set()
+                assert pending.result(timeout=8).json() == appeal
+        finally:
+            event.remove(engine, "before_cursor_execute", pause_before_reading_decision)
+        latest = client.get(f"{API}/appeals/{appeal['id']}").json()
+        assert latest["status"] == "resolved" and latest["current_revision"] == 1
+
+
+def test_migration_failure_leaves_previous_schema_and_is_retryable(tmp_path):
+    url = f"sqlite:///{tmp_path}/upgrade.sqlite3"
+    engine = build_engine(Settings(_env_file=None, CQA_DATABASE_URL=url))
+    config = Config()
+    config.set_main_option("script_location", str(Path(__file__).resolve().parents[1] / "alembic"))
+    try:
+        with engine.begin() as connection:
+            config.attributes["connection"] = connection
+            command.upgrade(config, "c001")
+
+        def fail_before_appeals(_conn, _cursor, statement, *_args):
+            if "CREATE TABLE appeals" in statement:
+                raise RuntimeError("Synthetic migration failure")
+
+        event.listen(engine, "before_cursor_execute", fail_before_appeals)
+        try:
+            with pytest.raises(RuntimeError, match="Synthetic migration failure"):
+                migrate(engine=engine)
+        finally:
+            event.remove(engine, "before_cursor_execute", fail_before_appeals)
+        with engine.connect() as connection:
+            assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "c001"
+            assert (
+                connection.scalar(text("SELECT name FROM sqlite_master WHERE name = 'evaluations'"))
+                is None
+            )
+        migrate(engine=engine)
+        with engine.connect() as connection:
+            assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "c002"
+            assert connection.scalar(text("SELECT count(*) FROM evaluations")) == 0
+    finally:
+        engine.dispose()
+
+
+def test_worker_requires_durable_sqlite():
+    settings = Settings(_env_file=None, CQA_DATABASE_URL="sqlite:///:memory:")
+    engine = build_engine(settings)
+
+    async def start():
+        async with evaluation_worker(
+            create_app(settings),
+            session_factory(engine),
+            None,
+            concurrency=2,
+            prompt_version="test",
+        ):
+            pytest.fail("A durable queue cannot share one SQLite connection")
+
+    try:
+        with pytest.raises(ValueError, match="file-backed SQLite"):
+            asyncio.run(start())
+    finally:
+        engine.dispose()

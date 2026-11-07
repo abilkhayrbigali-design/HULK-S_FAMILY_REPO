@@ -7,6 +7,9 @@ config = context.config
 
 
 def run_on_connection(connection):
+    # sqlite3 legacy mode does not send BEGIN before DDL. Keep schema changes
+    # and Alembic's revision marker in one rollback-capable transaction.
+    connection.exec_driver_sql("BEGIN IMMEDIATE")
     context.configure(connection=connection, target_metadata=Base.metadata, render_as_batch=True)
     with context.begin_transaction():
         context.run_migrations()
@@ -27,7 +30,7 @@ else:
     else:
         engine = make_engine(config.get_main_option("sqlalchemy.url"))
         try:
-            with engine.connect() as connection:
+            with engine.begin() as connection:
                 run_on_connection(connection)
         finally:
             engine.dispose()

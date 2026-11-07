@@ -282,7 +282,7 @@ def test_validation_does_not_echo_unknown_field_names(setup, record):
     response = upload(setup[0], record)
     assert response.status_code == 422
     assert "synthetic-private-field" not in response.text
-    assert response.json()["error"]["details"][0]["location"] == ["body", "records", 0]
+    assert response.json()["error"]["details"][0]["loc"] == ["body", "records", 0]
 
 
 @pytest.mark.parametrize(

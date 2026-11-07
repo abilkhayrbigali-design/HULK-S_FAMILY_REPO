@@ -39,7 +39,7 @@ def install_data_api(app, session_factory=None, *, dataset_url="", error_respons
             [
                 {
                     # Unknown field names are untrusted input, too.
-                    "location": list(e["loc"][:-1] if e["type"] == "extra_forbidden" else e["loc"]),
+                    "loc": list(e["loc"][:-1] if e["type"] == "extra_forbidden" else e["loc"]),
                     "type": e["type"],
                 }
                 for e in exc.errors()

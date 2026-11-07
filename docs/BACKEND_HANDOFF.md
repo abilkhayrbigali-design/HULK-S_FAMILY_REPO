@@ -13,6 +13,7 @@
 from app.api.install import install_data_api
 from app.db.migrate import migrate
 from app.db.session import session_factory
+from app.diagnostics import log_internal_error
 from app.services.evaluation_worker import evaluation_worker
 from app.services.seed import seed
 
@@ -20,10 +21,14 @@ from app.services.seed import seed
 install_data_api(app, dataset_url=settings.dataset_api_url.get_secret_value())
 
 # Внутри существующего lifespan после создания application.state.engine.
-migrate(engine=application.state.engine)
-sessions = session_factory(application.state.engine)
-with sessions.begin() as db:
-    seed(db)
+try:
+    migrate(engine=application.state.engine)
+    sessions = session_factory(application.state.engine)
+    with sessions.begin() as db:
+        seed(db)
+except Exception as exc:
+    log_internal_error("DATA_STARTUP_FAILED", exc)
+    raise RuntimeError("DATA_STARTUP_FAILED") from None
 async with evaluation_worker(
     application,
     sessions,
@@ -39,6 +44,8 @@ async with evaluation_worker(
 Тогда новый POST возвращает 503, а оставшиеся queued завершаются с
 `AI_NOT_CONFIGURED`. Вызов `install_data_api` выполняется один раз.
 Миграция `c002` использует тот же engine, worker завершается до `engine.dispose()`.
+Очередь требует файловую SQLite. Режим `:memory:` с одним общим соединением
+подходит для health-check каркаса, но worker в этом режиме не запускается.
 При штатной остановке worker дожидается уже захваченных задач. Провайдер
 обеспечивает конечный таймаут и ограниченные повторы согласно N-01/N-05.
 Подписанная ссылка извлекается из SecretStr только на сервере. `/health` реализован
@@ -105,9 +112,15 @@ A-02 должен закрепить эти имена в общих контр�
 usage и стоимость остаются неизвестными. Worker сохраняет известный provenance
 до N-02. Аварийное завершение во время самого сетевого вызова сохраняет только
 уже записанные данные. Контракт запросов и ответов HTTP сохраняется.
+Тесты сверяют реальные тела ответов с экспортированной схемой. Сверка
+генерируемой FastAPI документации ответов остаётся в A-06.
 
 `cqa.worker` пишет `evaluation_queued`, `evaluation_started`,
 `evaluation_completed`, `evaluation_failed` и агрегат `evaluations_interrupted`.
+При недоступной БД worker удерживает запись в слоте и повторяет сохранение
+с паузами до двух секунд. Событие `evaluation_write_retry` отмечает начало
+сбоя. Вызов модели при этом не повторяется. При остановке и недоступной БД
+запуск остаётся running для восстановления в следующем процессе.
 `cqa.appeals` пишет `appeal_created` и `appeal_decision_saved` после commit,
 а при повторном решении или устаревшей revision пишет `appeal_conflict`.
 Невалидное доказательство воспроизводит `AI_INVALID_RESULT`, ошибка

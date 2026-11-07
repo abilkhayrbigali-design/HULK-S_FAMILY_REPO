@@ -6,7 +6,9 @@ from contextlib import asynccontextmanager
 from copy import deepcopy
 from typing import Annotated, Protocol
 
-from pydantic import BaseModel, ConfigDict, Field, StrictInt, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, TypeAdapter, ValidationError
+from sqlalchemy.exc import OperationalError
+from sqlalchemy.pool import StaticPool
 
 from app.diagnostics import log_internal_error
 from app.evaluation.evidence import EvaluationValidationError
@@ -19,6 +21,7 @@ from app.services.errors import require
 
 logger = logging.getLogger("cqa.worker")
 Counter = Annotated[StrictInt, Field(ge=0)]
+_REVIEW_REASONS = TypeAdapter(list[Text])
 
 
 class EvaluationProvider(Protocol):
@@ -44,7 +47,6 @@ class ProviderMetadata(BaseModel):
     model_reported: Text | None
     duration_ms: Counter
     usage: Usage
-    review_reasons: list[Text] = Field(default_factory=list)
     estimated_cost_usd: Number | None = None
 
 
@@ -65,28 +67,55 @@ def _load(sessions, evaluation_id):
 
 def _provenance(metadata, prompt_version):
     return dict(
-        **metadata.model_dump(exclude={"review_reasons"}),
+        **metadata.model_dump(),
         prompt_version=prompt_version,
     )
 
 
-async def _fail(sessions, evaluation_id, code, **values):
-    saved = await asyncio.to_thread(
-        evaluations.update_running,
-        sessions,
-        evaluation_id,
-        status="failed",
-        completed_at=now(),
-        error=evaluations.failure(code),
-        **values,
-    )
+def _field(result, name):
+    return result.get(name) if isinstance(result, dict) else getattr(result, name, None)
+
+
+async def _save_running(stop, sessions, evaluation_id, **values):
+    # Keep the pending write in this slot through transient DB outages. At
+    # shutdown leave the run for recovery if the database is still unavailable.
+    delay = 0.25
+    while True:
+        try:
+            return await asyncio.to_thread(
+                evaluations.update_running, sessions, evaluation_id, **values
+            )
+        except OperationalError:
+            if delay == 0.25:
+                logger.warning("event=evaluation_write_retry error=DATABASE_UNAVAILABLE")
+            try:
+                await asyncio.wait_for(stop.wait(), timeout=delay)
+                return False
+            except TimeoutError:
+                delay = min(2, delay * 2)
+
+
+async def _fail(stop, sessions, evaluation_id, code, **values):
+    try:
+        saved = await _save_running(
+            stop,
+            sessions,
+            evaluation_id,
+            status="failed",
+            completed_at=now(),
+            error=evaluations.failure(code),
+            **values,
+        )
+    except Exception as exc:
+        log_internal_error("EVALUATION_FAILURE_NOT_SAVED", exc)
+        return
     if saved:
         logger.error("event=evaluation_failed status=failed error=%s", code)
 
 
-async def _evaluate(sessions, evaluation_id, provider, prompt_version):
+async def _evaluate(stop, sessions, evaluation_id, provider, prompt_version):
     if provider is None:
-        await _fail(sessions, evaluation_id, "AI_NOT_CONFIGURED")
+        await _fail(stop, sessions, evaluation_id, "AI_NOT_CONFIGURED")
         return
     transcript, checklist, pinned_id = await asyncio.to_thread(_load, sessions, evaluation_id)
     try:
@@ -99,31 +128,39 @@ async def _evaluate(sessions, evaluation_id, provider, prompt_version):
         except (ValidationError, OverflowError):
             metadata = None
         values = {"provenance": _provenance(metadata, prompt_version)} if metadata else {}
-        await _fail(sessions, evaluation_id, "AI_PROVIDER_ERROR", **values)
+        await _fail(stop, sessions, evaluation_id, "AI_PROVIDER_ERROR", **values)
         return
     except Exception as exc:
         log_internal_error("AI_PROVIDER_ERROR", exc)
-        await _fail(sessions, evaluation_id, "AI_PROVIDER_ERROR")
+        await _fail(stop, sessions, evaluation_id, "AI_PROVIDER_ERROR")
         return
 
     try:
         metadata = ProviderMetadata.model_validate(result)
         provenance = _provenance(metadata, prompt_version)
     except (ValidationError, OverflowError):
-        await _fail(sessions, evaluation_id, "AI_INVALID_RESULT")
+        await _fail(stop, sessions, evaluation_id, "AI_INVALID_RESULT")
         return
-    saved = await asyncio.to_thread(
-        evaluations.update_running, sessions, evaluation_id, provenance=provenance
-    )
+    try:
+        saved = await _save_running(stop, sessions, evaluation_id, provenance=provenance)
+    except Exception as exc:
+        log_internal_error("EVALUATION_PROVENANCE_NOT_SAVED", exc)
+        await _fail(
+            stop, sessions, evaluation_id, "EVALUATION_INTERNAL_ERROR", provenance=provenance
+        )
+        return
     if not saved:
         return
 
-    rows = (
-        result.get("criterion_results")
-        if isinstance(result, dict)
-        else getattr(result, "criterion_results", None)
-    )
+    rows = _field(result, "criterion_results")
+    if isinstance(rows, list):
+        # N-01 may expose its own Pydantic classes. N-02 validates their data
+        # against its own schema, including rows copied with unvalidated edits.
+        rows = [
+            row.model_dump(warnings=False) if isinstance(row, BaseModel) else row for row in rows
+        ]
     try:
+        reasons = _REVIEW_REASONS.validate_python(_field(result, "review_reasons"))
         if metadata.usage.request_count < 1:
             raise EvaluationValidationError("INVALID_REQUEST_COUNT")
         assessment = await asyncio.to_thread(
@@ -133,41 +170,44 @@ async def _evaluate(sessions, evaluation_id, provider, prompt_version):
             transcript_snapshot=transcript,
             transcript_version_id=pinned_id,
         )
-    except EvaluationValidationError:
-        await _fail(sessions, evaluation_id, "AI_INVALID_RESULT")
+    except (EvaluationValidationError, ValidationError):
+        await _fail(stop, sessions, evaluation_id, "AI_INVALID_RESULT")
         return
-    saved = await asyncio.to_thread(
-        evaluations.update_running,
+    saved = await _save_running(
+        stop,
         sessions,
         evaluation_id,
         status="completed",
         completed_at=now(),
         original=assessment,
         final=assessment,
-        provider_review_reasons=metadata.review_reasons,
+        provider_review_reasons=reasons,
     )
     if saved:
         logger.info("event=evaluation_completed status=completed")
 
 
 async def _slot(stop, sessions, provider, prompt_version):
+    claim_failed = False
     while not stop.is_set():
         evaluation_id = None
         try:
             evaluation_id = await asyncio.to_thread(evaluations.claim, sessions)
+            claim_failed = False
             if evaluation_id is not None:
                 logger.info("event=evaluation_started status=running")
-                await _evaluate(sessions, evaluation_id, provider, prompt_version)
+                await _evaluate(stop, sessions, evaluation_id, provider, prompt_version)
                 continue
         except Exception as exc:
-            log_internal_error("EVALUATION_INTERNAL_ERROR", exc)
-            if evaluation_id is not None:
-                try:
-                    await _fail(sessions, evaluation_id, "EVALUATION_INTERNAL_ERROR")
-                except Exception as save_error:
-                    log_internal_error("EVALUATION_FAILURE_NOT_SAVED", save_error)
+            if evaluation_id is None:
+                if not claim_failed:
+                    log_internal_error("EVALUATION_QUEUE_UNAVAILABLE", exc)
+                claim_failed = True
+            else:
+                log_internal_error("EVALUATION_INTERNAL_ERROR", exc)
+                await _fail(stop, sessions, evaluation_id, "EVALUATION_INTERNAL_ERROR")
         try:
-            await asyncio.wait_for(stop.wait(), timeout=0.25)
+            await asyncio.wait_for(stop.wait(), timeout=1 if claim_failed else 0.25)
         except TimeoutError:
             pass
 
@@ -179,7 +219,14 @@ async def evaluation_worker(
     """Start once per API lifespan, after migration and before accepting traffic."""
     if concurrency < 1 or not prompt_version.strip():
         raise ValueError("Invalid evaluation worker settings")
-    interrupted = await asyncio.to_thread(evaluations.recover, sessions)
+    engine = sessions.kw["bind"]
+    if engine.url.database in (None, "", ":memory:") or isinstance(engine.pool, StaticPool):
+        raise ValueError("Evaluation worker requires file-backed SQLite")
+    try:
+        interrupted = await asyncio.to_thread(evaluations.recover, sessions)
+    except Exception as exc:
+        log_internal_error("EVALUATION_RECOVERY_FAILED", exc)
+        raise RuntimeError("EVALUATION_RECOVERY_FAILED") from None
     if interrupted:
         logger.error("event=evaluations_interrupted error=INTERRUPTED records=%d", interrupted)
     stop = asyncio.Event()
