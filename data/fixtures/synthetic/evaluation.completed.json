@@ -1,0 +1,231 @@
+{
+  "id": "00000000-0000-4000-8000-000000000005",
+  "conversation_id": "00000000-0000-4000-8000-000000000001",
+  "transcript_version_id": "00000000-0000-4000-8000-000000000002",
+  "checklist_version_id": "00000000-0000-4000-8000-000000000004",
+  "status": "completed",
+  "revision": 0,
+  "created_at": "2026-11-07T09:00:00Z",
+  "completed_at": "2026-11-07T09:00:00Z",
+  "original": {
+    "total": 70,
+    "no_applicable_reason": null,
+    "gross_error": null,
+    "criteria": [
+      {
+        "criterion_id": "greeting_custom",
+        "applicability": "applicable",
+        "answer": true,
+        "explanation": "Синтетический пример структуры: оператор поздоровался.",
+        "evidence": [
+          {
+            "kind": "message",
+            "message_id": "m0002"
+          }
+        ],
+        "review_reasons": [],
+        "weight": 40,
+        "base_points": 40,
+        "effective_weight": 40,
+        "effective_points": 40,
+        "review_required": false
+      },
+      {
+        "criterion_id": "navigation_custom",
+        "applicability": "applicable",
+        "answer": 5,
+        "explanation": "Синтетический пример структуры ответа. Это не экспертная разметка.",
+        "evidence": [
+          {
+            "kind": "message",
+            "message_id": "m0002"
+          }
+        ],
+        "review_reasons": [],
+        "weight": 60,
+        "base_points": 30,
+        "effective_weight": 60,
+        "effective_points": 30,
+        "review_required": false
+      },
+      {
+        "criterion_id": "followup_custom",
+        "applicability": "not_applicable",
+        "answer": null,
+        "explanation": "Повторного вопроса нет; проверен полный диапазон диалога.",
+        "evidence": [
+          {
+            "kind": "range",
+            "start_message_id": "m0001",
+            "end_message_id": "m0004"
+          }
+        ],
+        "review_reasons": [],
+        "weight": 20,
+        "base_points": 0,
+        "effective_weight": 0,
+        "effective_points": 0,
+        "review_required": false
+      },
+      {
+        "criterion_id": "risk_custom",
+        "applicability": "applicable",
+        "answer": false,
+        "explanation": "В проверенном синтетическом диапазоне предложение личного перевода отсутствует.",
+        "evidence": [
+          {
+            "kind": "range",
+            "start_message_id": "m0001",
+            "end_message_id": "m0004"
+          }
+        ],
+        "review_reasons": [],
+        "weight": 0,
+        "base_points": 0,
+        "effective_weight": 0,
+        "effective_points": 0,
+        "review_required": false
+      }
+    ],
+    "sections": [
+      {
+        "name": "Контакт",
+        "base_points": 40,
+        "applicable_weight": 40,
+        "total": 100
+      },
+      {
+        "name": "Решение",
+        "base_points": 30,
+        "applicable_weight": 60,
+        "total": 50
+      },
+      {
+        "name": "Нарушения",
+        "base_points": 0,
+        "applicable_weight": 0,
+        "total": null
+      }
+    ]
+  },
+  "final": {
+    "total": 70,
+    "no_applicable_reason": null,
+    "gross_error": null,
+    "criteria": [
+      {
+        "criterion_id": "greeting_custom",
+        "applicability": "applicable",
+        "answer": true,
+        "explanation": "Синтетический пример структуры: оператор поздоровался.",
+        "evidence": [
+          {
+            "kind": "message",
+            "message_id": "m0002"
+          }
+        ],
+        "review_reasons": [],
+        "weight": 40,
+        "base_points": 40,
+        "effective_weight": 40,
+        "effective_points": 40,
+        "review_required": false
+      },
+      {
+        "criterion_id": "navigation_custom",
+        "applicability": "applicable",
+        "answer": 5,
+        "explanation": "Синтетический пример структуры ответа. Это не экспертная разметка.",
+        "evidence": [
+          {
+            "kind": "message",
+            "message_id": "m0002"
+          }
+        ],
+        "review_reasons": [],
+        "weight": 60,
+        "base_points": 30,
+        "effective_weight": 60,
+        "effective_points": 30,
+        "review_required": false
+      },
+      {
+        "criterion_id": "followup_custom",
+        "applicability": "not_applicable",
+        "answer": null,
+        "explanation": "Повторного вопроса нет; проверен полный диапазон диалога.",
+        "evidence": [
+          {
+            "kind": "range",
+            "start_message_id": "m0001",
+            "end_message_id": "m0004"
+          }
+        ],
+        "review_reasons": [],
+        "weight": 20,
+        "base_points": 0,
+        "effective_weight": 0,
+        "effective_points": 0,
+        "review_required": false
+      },
+      {
+        "criterion_id": "risk_custom",
+        "applicability": "applicable",
+        "answer": false,
+        "explanation": "В проверенном синтетическом диапазоне предложение личного перевода отсутствует.",
+        "evidence": [
+          {
+            "kind": "range",
+            "start_message_id": "m0001",
+            "end_message_id": "m0004"
+          }
+        ],
+        "review_reasons": [],
+        "weight": 0,
+        "base_points": 0,
+        "effective_weight": 0,
+        "effective_points": 0,
+        "review_required": false
+      }
+    ],
+    "sections": [
+      {
+        "name": "Контакт",
+        "base_points": 40,
+        "applicable_weight": 40,
+        "total": 100
+      },
+      {
+        "name": "Решение",
+        "base_points": 30,
+        "applicable_weight": 60,
+        "total": 50
+      },
+      {
+        "name": "Нарушения",
+        "base_points": 0,
+        "applicable_weight": 0,
+        "total": null
+      }
+    ]
+  },
+  "review_required": false,
+  "review_reasons": [],
+  "provenance": {
+    "provider": "synthetic",
+    "model_requested": "synthetic-example",
+    "model_reported": null,
+    "usage": {
+      "request_count": 1,
+      "input_tokens": null,
+      "output_tokens": null,
+      "total_tokens": null,
+      "cached_input_tokens": null,
+      "reasoning_output_tokens": null
+    },
+    "duration_ms": 0,
+    "prompt_version": "synthetic-contract-v1",
+    "estimated_cost_usd": null
+  },
+  "error": null
+}
