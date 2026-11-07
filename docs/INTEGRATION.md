@@ -17,6 +17,8 @@
 
 ## Нурсултан — N-01/N-02
 
+Пользователь выбрал **GPT-6 Luna** (`gpt-6-luna`) как модель оценки по умолчанию (D-016). Адаптер читает `settings.openai_model` / `OPENAI_MODEL`, сохраняя возможность явной настройки. Это выбор модели приложения, отдельный от reviewer Sol/xhigh. Проверка доступа и реальный сквозной запуск остаются в N-01.
+
 Входы: `TranscriptSnapshot` (`id` = UUID версии транскрипта, conversation_id, language, channel, messages) и неизменяемый `ChecklistVersion` из общего OpenAPI. Рекомендуемая async-граница провайдера:
 
 ```text
