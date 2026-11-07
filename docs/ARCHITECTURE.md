@@ -146,8 +146,7 @@ evaluate(transcript_snapshot, checklist_snapshot, prompt_version)
 | `messages` | FK версии, message ID, позиция, исходный timestamp, роль, текст; unique(version, message ID), unique(version, position) |
 | `checklists` | UUID, название, указатель на последнюю сохранённую версию |
 | `checklist_versions` | UUID, checklist FK, последовательный номер, JSON критериев; unique(checklist, version) |
-| `evaluations` | UUID, две FK версий, статус, исходный итог, revision финального результата, модель/промпт/usage, ошибка |
-| `criterion_results` | evaluation FK, criterion ID, исходная применимость/ответ/объяснение/доказательства; unique(evaluation, criterion ID) |
+| `evaluations` | UUID, две FK версий, статус, неизменяемый Assessment с исходными критериями, текущий Assessment, revision, модель/промпт/usage, ошибка |
 | `appeals` | UUID, evaluation/criterion, комментарий, статус, версия результата на момент обращения |
 | `appeal_decisions` | appeal FK, действие, причина, новый ответ при override, время; одно финальное решение на обращение |
 
