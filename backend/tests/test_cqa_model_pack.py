@@ -225,6 +225,39 @@ def test_export_checksum_is_content_based(tmp_path):
     assert pack.sha_file(path) == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
 
 
+def test_native_export_beside_requested_folder_is_normalized_without_private_logs(tmp_path, caplog):
+    output = tmp_path / "export"
+    output.mkdir()
+    source = output / "SYNTHETIC_PRIVATE_NAME.Q4_K_M.gguf"
+    source.write_bytes(b"GGUF own synthetic collection fixture")
+    state = {"model": "google/gemma-4-E4B-it", "revision": "a" * 40, "prompt_sha256": "b" * 64}
+    with caplog.at_level(logging.INFO, logger="cqa.training"):
+        result = pack.finalize_export(output, state)
+    artifact = output / result["file"]
+    assert artifact.parent == output / "gguf" and not source.exists()
+    assert pack.sha_file(artifact) == result["sha256"]
+    assert (artifact.parent / "Modelfile").exists()
+    assert "model_export_finalized" in caplog.text
+    assert "SYNTHETIC_PRIVATE_NAME" not in caplog.text
+
+
+@pytest.mark.parametrize("kind", ["duplicate", "invalid_header", "redirected_directory"])
+def test_invalid_native_export_is_rejected_without_publishing(tmp_path, kind):
+    output = tmp_path / "export"
+    output.mkdir()
+    source = output / "synthetic.Q4_K_M.gguf"
+    source.write_bytes(b"GGUF synthetic")
+    if kind == "duplicate":
+        (output / "second.Q4_K_M.gguf").write_bytes(b"GGUF other synthetic")
+    elif kind == "invalid_header":
+        source.write_bytes(b"not a GGUF file")
+    else:
+        (output / "gguf").symlink_to(tmp_path, target_is_directory=True)
+    with pytest.raises(pilot.PilotError):
+        pack.finalize_export(output, {})
+    assert source.exists() and not (output / "export.json").exists()
+
+
 def test_training_failure_is_persisted_and_logged_as_error(private, monkeypatch, caplog):
     calls = []
 

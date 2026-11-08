@@ -241,8 +241,7 @@ def smoke(args):
     return state
 
 
-def export(args):
-    run = args.run.resolve()
+def training_state(run):
     state = json.loads((run / "outcome.json").read_text())
     if (
         state.get("status") != "completed"
@@ -259,6 +258,57 @@ def export(args):
         run / "adapter"
     ):
         raise PilotError("ADAPTER_CHANGED")
+    return state
+
+
+def finalize_export(output, state):
+    files = [p for p in output.rglob("*.gguf") if "q4_k_m" in p.name.lower()]
+    if len(files) != 1:
+        raise PilotError("SINGLE_Q4_ARTIFACT_REQUIRED")
+    artifact = files[0]
+    if artifact.is_symlink() or not artifact.resolve().is_relative_to(output.resolve()):
+        raise PilotError("INVALID_GGUF_ARTIFACT")
+    with artifact.open("rb") as handle:
+        if handle.read(4) != b"GGUF":
+            raise PilotError("INVALID_GGUF_ARTIFACT")
+    canonical = output / "gguf" / artifact.name
+    if artifact != canonical:
+        if canonical.parent.is_symlink():
+            raise PilotError("INVALID_GGUF_ARTIFACT")
+        canonical.parent.mkdir(exist_ok=True)
+        if canonical.exists():
+            raise PilotError("ARTIFACT_ALREADY_EXISTS")
+        artifact.rename(canonical)
+        artifact = canonical
+    (artifact.parent / "Modelfile").write_text(
+        f'FROM ./{artifact.name}\nSYSTEM """{SYSTEM}"""\n'
+        "PARAMETER num_ctx 16384\nPARAMETER num_predict 3072\nPARAMETER temperature 0\n"
+    )
+    result = {
+        "status": "completed",
+        "training_status": "finetuned_candidate",
+        "export_implementation_sha256": sha_file(Path(__file__)),
+        "model": state["model"],
+        "revision": state["revision"],
+        "file": str(artifact.relative_to(output)),
+        "sha256": sha_file(artifact),
+        "bytes": artifact.stat().st_size,
+        "quantization": "q4_k_m",
+        "format_version": FORMAT_VERSION,
+        "prompt_sha256": state["prompt_sha256"],
+        "local_runtime_verified": False,
+        "quality_improvement_verified": False,
+    }
+    write_json(output / "export.json", result)
+    logger.info(
+        "event=model_export_finalized status=completed bytes=%d", result["bytes"]
+    )
+    return result
+
+
+def export(args):
+    run = args.run.resolve()
+    state = training_state(run)
     output = new_private_directory(args.output)
     try:
         with quiet_libraries():
@@ -307,32 +357,7 @@ def export(args):
             model.save_pretrained_gguf(
                 str(output / "gguf"), tokenizer, quantization_method="q4_k_m"
             )
-        files = [
-            p for p in (output / "gguf").rglob("*.gguf") if "q4_k_m" in p.name.lower()
-        ]
-        if len(files) != 1:
-            raise PilotError("SINGLE_Q4_ARTIFACT_REQUIRED")
-        artifact = files[0]
-        (artifact.parent / "Modelfile").write_text(
-            f'FROM ./{artifact.name}\nSYSTEM """{SYSTEM}"""\n'
-            "PARAMETER num_ctx 16384\nPARAMETER num_predict 3072\nPARAMETER temperature 0\n"
-        )
-        result = {
-            "status": "completed",
-            "training_status": "finetuned_candidate",
-            "model": state["model"],
-            "revision": state["revision"],
-            "file": str(artifact.relative_to(output)),
-            "sha256": sha_file(artifact),
-            "bytes": artifact.stat().st_size,
-            "quantization": "q4_k_m",
-            "format_version": FORMAT_VERSION,
-            "prompt_sha256": state["prompt_sha256"],
-            "local_runtime_verified": False,
-            "quality_improvement_verified": False,
-        }
-        write_json(output / "export.json", result)
-        return result
+        return finalize_export(output, state)
     except BaseException as exc:
         write_json(
             output / "export.json", {"status": "failed", "error": "EXPORT_FAILED"}
