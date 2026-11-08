@@ -7,14 +7,21 @@ Release — предварительный finetuned_candidate, не production-
 Для Linux/macOS/WSL с GitHub CLI:
 
 ```bash
-gh release download cqa-gemma4-e4b-v1 --repo abilkhayrbigali-design/HULK-S_FAMILY_REPO --dir data/private/model-downloads/cqa-gemma4-e4b-v1
-cd data/private/model-downloads/cqa-gemma4-e4b-v1
-sha256sum --check SHA256SUMS
-test ! -e cqa-gemma4-e4b-v1.tar
-cat cqa-gemma4-e4b-v1.tar.part-001 cqa-gemma4-e4b-v1.tar.part-002 cqa-gemma4-e4b-v1.tar.part-003 > cqa-gemma4-e4b-v1.tar
-sha256sum --check ARCHIVE_SHA256SUMS
-test ! -e cqa-gemma4
-tar --extract --file cqa-gemma4-e4b-v1.tar
+(
+  set -euC
+  umask 077
+  mkdir -p data/private/model-downloads
+  CQA_MODEL_DOWNLOAD=$(mktemp -d data/private/model-downloads/cqa-gemma4-e4b-v1.XXXXXX)
+  gh release download cqa-gemma4-e4b-v1 --repo abilkhayrbigali-design/HULK-S_FAMILY_REPO --dir "$CQA_MODEL_DOWNLOAD"
+  cd "$CQA_MODEL_DOWNLOAD"
+  sha256sum --check SHA256SUMS
+  test ! -e cqa-gemma4-e4b-v1.tar
+  cat cqa-gemma4-e4b-v1.tar.part-001 cqa-gemma4-e4b-v1.tar.part-002 cqa-gemma4-e4b-v1.tar.part-003 > cqa-gemma4-e4b-v1.tar
+  sha256sum --check ARCHIVE_SHA256SUMS
+  test ! -e cqa-gemma4
+  tar --extract --file cqa-gemma4-e4b-v1.tar
+  printf 'Каталог модели: %s/cqa-gemma4\n' "$PWD"
+)
 ```
 
 Нужно около17GB свободного диска для частей, собранного архива и распаковки.
@@ -22,11 +29,11 @@ tar --extract --file cqa-gemma4-e4b-v1.tar
 Проверки обязательны до распаковки. Отсутствующую/повреждённую часть скачайте заново;
 сами файлы модели нельзя коммитить. Сборка/проверка выполняется в новом приватном каталоге.
 
+Блок останавливается при любой ошибке и использует новый приватный каталог; существующие файлы не заменяются.
 После распаковки появятся GGUF, Modelfile, adapter/, лицензия, происхождение и технические отчёты.
-Установить модель в запущенный Ollama:
+Перейдите в абсолютный каталог модели, напечатанный блоком. Из этого каталога установите модель в запущенный Ollama:
 
 ```bash
-cd cqa-gemma4
 ollama create cqa-gemma4-e4b-rubric-v1 -f Modelfile
 ```
 
