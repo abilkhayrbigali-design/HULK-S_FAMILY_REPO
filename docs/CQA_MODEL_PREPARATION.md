@@ -165,6 +165,21 @@ PYTHONPATH=backend uv run --project backend --locked python tools/cqa_model_pack
 Перед принятием нужна независимая разметка N-03/N-04 и сравнение исходной
 Gemma с дообученным Q4 на одинаковом зафиксированном наборе.
 
+## Копия на GitHub
+
+[Предварительный релиз cqa-gemma4-e4b-v1](https://github.com/abilkhayrbigali-design/HULK-S_FAMILY_REPO/releases/tag/cqa-gemma4-e4b-v1)
+содержит сами веса и LoRA в трёх частях, лицензию, model card и checksums.
+Все9 server digests/размеров совпали с локальными. Публичное скачивание manifest
+проверено. Описание/восстановление: [model README](../models/cqa-gemma4-e4b-v1/README.md).
+
+GitHub-архив cqa-gemma4-e4b-v1.tar переупакован с нормализованными tar headers,
+лицензией, origin и локальной QA-сводкой; его SHA256
+`bb3d40a9b3963f0830d9752c9318d0ae2ceb0e306d868412c0090c41baa5389a`.
+Это другой контейнер, чем исходный локальный cqa-gemma4-portable.tar с SHA ccf88b….
+Сам GGUF не менялся: d6578e…80a. Для скачанной версии используйте её
+manifest.json/SHA256SUMS/ARCHIVE_SHA256SUMS. Тег указывает на проверенный e72327c;
+описание проекта сохранено в codex/abulkhair-brev, main не переписан.
+
 ## Установленная модель на этом ноутбуке
 
 Имя: `cqa-gemma4-e4b-rubric-v1`, API:127.0.0.1:11439. Ollama-сервер запущен
