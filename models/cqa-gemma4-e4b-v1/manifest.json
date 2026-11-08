@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "model_id": "cqa-gemma4-e4b-v1",
+  "base_model": "google/gemma-4-E4B-it",
+  "base_revision": "4ecc2ba63bcac23ba4a767fc87025b1450f84c9c",
+  "license": "Apache-2.0",
+  "format": "GGUF",
+  "quantization": "Q4_K_M",
+  "release": {
+    "repository": "abilkhayrbigali-design/HULK-S_FAMILY_REPO",
+    "tag": "cqa-gemma4-e4b-v1",
+    "url": "https://github.com/abilkhayrbigali-design/HULK-S_FAMILY_REPO/releases/tag/cqa-gemma4-e4b-v1",
+    "prerelease": true
+  },
+  "archive": {
+    "name": "cqa-gemma4-e4b-v1.tar",
+    "size_bytes": 5507112960,
+    "sha256": "bb3d40a9b3963f0830d9752c9318d0ae2ceb0e306d868412c0090c41baa5389a"
+  },
+  "parts": [
+    {
+      "name": "cqa-gemma4-e4b-v1.tar.part-001",
+      "size_bytes": 1879048192,
+      "sha256": "0e0492615343b2391450ff373ea594656ee0833021d54139e5ff771375355ca8",
+      "url": "https://github.com/abilkhayrbigali-design/HULK-S_FAMILY_REPO/releases/download/cqa-gemma4-e4b-v1/cqa-gemma4-e4b-v1.tar.part-001"
+    },
+    {
+      "name": "cqa-gemma4-e4b-v1.tar.part-002",
+      "size_bytes": 1879048192,
+      "sha256": "b976a3a86cbeed2b73b716edc469af75847d81b284ee82f698a6377c402d10dc",
+      "url": "https://github.com/abilkhayrbigali-design/HULK-S_FAMILY_REPO/releases/download/cqa-gemma4-e4b-v1/cqa-gemma4-e4b-v1.tar.part-002"
+    },
+    {
+      "name": "cqa-gemma4-e4b-v1.tar.part-003",
+      "size_bytes": 1749016576,
+      "sha256": "1cab992839a542e5ab7ff230566056a1c73efa4a7aed6713e4d7216b4d9db0c2",
+      "url": "https://github.com/abilkhayrbigali-design/HULK-S_FAMILY_REPO/releases/download/cqa-gemma4-e4b-v1/cqa-gemma4-e4b-v1.tar.part-003"
+    }
+  ],
+  "model": {
+    "path": "cqa-gemma4/4ecc2ba63bcac23ba4a767fc87025b1450f84c9c.Q4_K_M.gguf",
+    "size_bytes": 5335286752,
+    "sha256": "d6578ec5f98a0379148bdf1245286c5790ef7b56533376c1014690069e63f80a",
+    "ollama_name": "cqa-gemma4-e4b-rubric-v1"
+  },
+  "training_source_commit": "5bb70c76f9e095f0521cb567589a44fc91c7d3d9",
+  "verified_project_commit": "915464b1f5e3436238695dad0d2414ae63065d59",
+  "local_runtime_verified": true,
+  "human_ground_truth_used": false,
+  "quality_improvement_verified": false,
+  "application_provider_connected": false
+}

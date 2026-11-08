@@ -113,6 +113,8 @@ ERROR cqa.errors error=DATABASE_UNAVAILABLE locations=backend/app/main.py:123
 
 В публичный репозиторий добавляются только собственные синтетические примеры. Исходные диалоги, аудио и ручная разметка хранятся в игнорируемом `data/private/`.
 
+[Сохранённая модель: GitHub Release и восстановление](models/cqa-gemma4-e4b-v1/README.md).
+
 ## Документация
 
 - [Архитектура и границы модулей](docs/ARCHITECTURE.md)
